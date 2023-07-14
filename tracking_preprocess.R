@@ -130,9 +130,21 @@ table(tripdat$burstID)
 
 ggplot(data=tripdat%>%filter(is.finite(speed_diff)))+geom_histogram(aes(x=speed_diff))+facet_wrap(~tripID)
 
+#average FLYING speed
+tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1 & speed_diff>4)%>%
+  summarise(mean_s=mean(speed_diff), sd_s=sd(speed_diff))
+#mean_s     sd_s
+#1 13.18934 4.017213
+
 #plot non-island points 
-ggplot(data=tripdat%>%filter(tripID!="-1"&is.finite(speed_diff &ColDist>1)))+
-  geom_histogram(aes(x=speed_diff, fill=ifelse(speed_diff<4, "blue", "red")), binwidth=1)+scale_x_continuous(breaks=0:50)
+ggplot()+
+  geom_histogram(data=tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1),
+                 aes(x=speed_diff, fill=ifelse(speed_diff<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
+  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.19±4 m/s"), size=5)+
+  scale_x_continuous(breaks=0:40)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
+
+
+
 
 tripdat$sit_fly<-"sit"
 tripdat[tripdat$]
