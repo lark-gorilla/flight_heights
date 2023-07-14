@@ -77,9 +77,10 @@ ggplot(data=tripdat)+
   geom_vline(xintercept=ymd_hms("23-04-01 17:59:00", tz="Australia/Sydney"))+
   facet_wrap(~ID)
 
-# now segment data to classify each ~ 5 minute burst
+##### now segment data to classify each ~ 5 minute burst, add tdiff and distance between pts ####
 
 #temporarily split out birds
+
 tripdat1<-tripdat%>%filter(ID=="08611854")
 tripdat2<-tripdat%>%filter(ID=="41490936")
 
@@ -88,30 +89,60 @@ tripdat1$burstID<-NA
 
 counter=1 # slow loop but works
 for(i in 1:nrow(tripdat1)){
-  tripdat1[i,]$burstID<-paste(tripdat1[i,]$tripID, counter, sep="_")
-  if(tripdat1[i,]$tdiff>100|is.na(tripdat1[i,]$tdiff)){counter=counter+1};print(i)}
+  tripdat1$burstID[i]<-paste(tripdat1$tripID[i], counter, sep="_")
+  if(tripdat1$tdiff[i]>100|is.na(tripdat1$tdiff[i])){counter=counter+1};print(i)}
 
+tripdat1_sf<-st_as_sf(tripdat1, coords=c("Longitude", "Latitude"), crs=4326)
+tripdat1_sf<-cbind(tripdat1_sf, c(st_geometry(tripdat1_sf)[2:nrow(tripdat1_sf)], st_geometry(tripdat1_sf)[1]))%>%
+  mutate(dist_diff = st_distance(geometry, geometry.1, by_element = T))
+tripdat1$dist_diff<-tripdat1_sf$dist_diff
 
 tripdat2$tdiff<-c(diff(tripdat2$DateTime_AEDT),0)
 tripdat2$burstID<-NA
 
 counter=1
 for(i in 1:nrow(tripdat2)){
-  tripdat2[i,]$burstID<-paste(tripdat2[i,]$tripID, counter, sep="_")
-  if(tripdat2[i,]$tdiff>100|is.na(tripdat2[i,]$tdiff)){counter=counter+1};print(i)}
+  tripdat2$burstID[i]<-paste(tripdat2$tripID[i], counter, sep="_")
+  if(tripdat2$tdiff[i]>100|is.na(tripdat2$tdiff[i])){counter=counter+1};print(i)}
 
-tripdat<-rbind(tripdat1, tripdat2)
+tripdat2_sf<-st_as_sf(tripdat2, coords=c("Longitude", "Latitude"), crs=4326)
+tripdat2_sf<-cbind(tripdat2_sf, c(st_geometry(tripdat2_sf)[2:nrow(tripdat2_sf)], st_geometry(tripdat2_sf)[1]))%>%
+  mutate(dist_diff = st_distance(geometry, geometry.1, by_element = T))
+tripdat2$dist_diff<-tripdat2_sf$dist_diff
 
+tripdat<-rbind(tripdat1, tripdat2) # bind up again
+tripdat$geometry.1<-NULL
+tripdat$speed_diff<-as.numeric(tripdat$dist_diff/as.numeric(tripdat$tdiff)) # get speed between points (don't trust device speed)
+# remove 3 erroneous datapoints over 50 m/s
+tripdat<-tripdat%>%filter(speed_diff<50)
+
+# check segments
 blen<-length(unique(tripdat$burstID))
 cols = rainbow(blen, s=.6, v=.9)[sample(1:blen,blen)]
-
 
 ggplot(data=tripdat)+
   geom_point(aes(x=DateTime_AEDT, y=ColDist, colour=burstID))+
   facet_wrap(~ID, scales="free") + scale_colour_manual(values=cols)+theme(legend.position = "none")
 
-table(tripdat)
+table(tripdat$burstID)
 
+# classify non flying points using speed
+
+ggplot(data=tripdat%>%filter(is.finite(speed_diff)))+geom_histogram(aes(x=speed_diff))+facet_wrap(~tripID)
+
+#plot non-island points 
+ggplot(data=tripdat%>%filter(tripID!="-1"&is.finite(speed_diff &ColDist>1)))+
+  geom_histogram(aes(x=speed_diff, fill=ifelse(speed_diff<4, "blue", "red")), binwidth=1)+scale_x_continuous(breaks=0:50)
+
+tripdat$sit_fly<-"sit"
+tripdat[tripdat$]
+
+
+# convert to spatial
+dat_sf<-st_as_sf(tripdat, coords=c("Longitude", "Latitude"), crs=4326)
+#view in tmap
+tmap_mode("view")
+tm_shape(dat_sf)+tm_dots(col="speed_diff")+tm_mouse_coordinates()
 
 
 
