@@ -7,6 +7,7 @@ library(GGally)
 library(track2KBA)
 library(tmap)
 library(sf)
+library(EMbC)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/data/shy_albatross_island")
 
@@ -126,7 +127,7 @@ ggplot(data=tripdat)+
 
 table(tripdat$burstID)
 
-# classify non flying points using speed
+#### classify flying/sitting points using speed ####
 
 ggplot(data=tripdat%>%filter(is.finite(speed_diff)))+geom_histogram(aes(x=speed_diff))+facet_wrap(~tripID)
 
@@ -143,19 +144,33 @@ ggplot()+
   geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.19±4 m/s"), size=5)+
   scale_x_continuous(breaks=0:40)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
 
+tripdat$sit_fly<-"fly"
+tripdat[tripdat$speed_diff<4,]$sit_fly<-"sit"
 
+#### classify behaviour using EmBC ####
 
+forembc <- tripdat[,c('DateTime_AEDT', 'Longitude', 'Latitude', 'tripID')] #time, longitude, latitude, ID ( ! order is important !)
 
-tripdat$sit_fly<-"sit"
-tripdat[tripdat$]
+BC <- stbc(forembc)
+sctr(BC)
+stts(BC)
+
+smoothedBC <- smth(BC, dlta=1)
+view(smoothedBC)
+
+tripdat$embc <- smoothedBC@A
+tripdat$embc <- gsub("2","foraging",tripdat$embc)
+tripdat$embc <- gsub("1","resting",tripdat$embc)
+tripdat$embc <- gsub("3","commuting",tripdat$embc)
+tripdat$embc <- gsub("4","relocating",tripdat$embc)
+tripdat$embc <- gsub("5","DD",tripdat$embc)
 
 
 # convert to spatial
 dat_sf<-st_as_sf(tripdat, coords=c("Longitude", "Latitude"), crs=4326)
 #view in tmap
 tmap_mode("view")
-tm_shape(dat_sf)+tm_dots(col="speed_diff")+tm_mouse_coordinates()
-
+tm_shape(dat_sf)+tm_dots(col="sit_fly")+tm_shape(dat_sf)+tm_dots(col="embc")+tm_mouse_coordinates()
 
 
 # lots of variation in temp.. maybe correlated with solar heating?
