@@ -117,7 +117,7 @@ tripdat$speed_diff<-as.numeric(tripdat$dist_diff/as.numeric(tripdat$tdiff)) # ge
 # remove 3 erroneous datapoints over 50 m/s
 tripdat<-tripdat%>%filter(speed_diff<50)
 
-# check segments
+# check burst segments
 blen<-length(unique(tripdat$burstID))
 cols = rainbow(blen, s=.6, v=.9)[sample(1:blen,blen)]
 
@@ -125,7 +125,22 @@ ggplot(data=tripdat)+
   geom_point(aes(x=DateTime_AEDT, y=ColDist, colour=burstID))+
   facet_wrap(~ID, scales="free") + scale_colour_manual(values=cols)+theme(legend.position = "none")
 
-table(tripdat$burstID)
+# looks good
+
+tripdat%>%group_by(burstID)%>%summarise(c=length(Latitude))%>%pull(c)%>%table() 
+# most bursts just over 300 s ( 5 min). A few shorter ~50-270 sec, then a bunch 6 second or less. See where these are to decide whether to remove
+short_bursts<-tripdat%>%group_by(burstID)%>%summarise(c=length(Latitude))%>%filter(c<50)%>%pull(burstID)
+
+# convert to spatial, small trips
+dat_sf<-st_as_sf(tripdat%>%filter(burstID %in%short_bursts),
+coords=c("Longitude", "Latitude"), crs=4326)
+#view in tmap
+tmap_mode("view")
+tm_shape(dat_sf)+tm_dots(col="burstID")+tm_mouse_coordinates()
+
+# yes remove bursts < 6 seconds
+tripdat<-tripdat%>%filter(!burstID%in%short_bursts)
+
 
 #### classify flying/sitting points using speed ####
 
@@ -170,7 +185,43 @@ tripdat$embc <- gsub("5","DD",tripdat$embc)
 dat_sf<-st_as_sf(tripdat, coords=c("Longitude", "Latitude"), crs=4326)
 #view in tmap
 tmap_mode("view")
-tm_shape(dat_sf)+tm_dots(col="sit_fly")+tm_shape(dat_sf)+tm_dots(col="embc")+tm_mouse_coordinates()
+tm_shape(dat_sf)+tm_dots(col="embc")+tm_mouse_coordinates()
+
+
+#### classify each burst based on behavior ####
+
+# make burst summary table
+
+burst_summary<-tripdat%>%group_by(burstID)%>%summarise(
+  burst_dur1=sum(tdiff),
+  burst_dur2=last(DateTime_AEDT)-first(DateTime_AEDT),
+  ave_tdiff=mean(tdiff),
+  max_tdiff=max(tdiff),
+  ave_speed=mean(speed_diff),
+  ave_colD=mean(ColDist),
+  sum_dist=sum(dist_diff))
+
+# classes
+# B = bad (remove)
+# I = Inspect (needs something fixing)
+# C = Colony (colony control point)
+# S = Sit (whole burst is sitting/drifting)
+# T = Transit (whole burst is directed flight)
+# L = Looping (During burst bird displays searching behavior, breaking from transiting flight)
+# A = Alight (sitting AND Flying observed in burst)
+
+
+burst_summary$class<-"NA"
+for(i in unique(tripdat$burstID))
+{
+  print(tm_basemap("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")+
+          tm_shape(dat_sf%>%filter(burstID==i))+tm_dots(col="sit_fly"))
+  print(burst_summary%>%filter(burstID==i))
+  ans1<-readline("enter burst class:")
+  burst_summary[burst_summary$burstID==i,]$class<-ans1
+  print(burst_summary[burst_summary$burstID==i,])
+}
+
 
 
 # lots of variation in temp.. maybe correlated with solar heating?
