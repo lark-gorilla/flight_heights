@@ -9,12 +9,12 @@ library(tmap)
 library(sf)
 library(EMbC)
 
-setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/data/shy_albatross_island")
+setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
 # Combine data from two tags that uploaded data while on birds
 
-dat<-rbind(data.frame(read.csv("gps_89460800120108611854.csv"), ID="08611854"),
-           data.frame(read.csv("gps_89460800120141490936.csv"), ID="41490936"))
+dat<-rbind(data.frame(read.csv("data/shy_albatross_island/gps_89460800120108611854.csv"), ID="08611854"),
+           data.frame(read.csv("data/shy_albatross_island/gps_89460800120141490936.csv"), ID="41490936"))
 
 table(dat$iccid)
 table(dat$ID)
@@ -222,7 +222,29 @@ for(i in unique(tripdat$burstID))
   print(burst_summary[burst_summary$burstID==i,])
 }
 
+# explore 6 'I' classifications
+burst_summary[burst_summary$class=="I",]$burstID
 
+# Tidying code
+tripdat<-tripdat%>%filter(!(burstID=="-1_22" & deployed_ID=="predeployment")) # drop some predeployemnt locs from a burst
+burst_summary[burst_summary$burstID=="-1_22",]$class<-"S"
+
+tripdat[tripdat$burstID=="08611854_01_123"&ColDist<500,]
+
+tripdat<-tripdat%>%filter(!(burstID=="08611854_01_123" &ColDist<500)) # drop some near col pts from burst
+burst_summary[burst_summary$burstID=="08611854_01_123",]$class<-"S"
+
+burst_summary[burst_summary$burstID=="08611854_04_178",]$class<-"S" # just has gap in middle
+burst_summary[burst_summary$burstID=="08611854_06_212",]$class<-"L" # just has gap in middle
+burst_summary[burst_summary$burstID=="41490936_01_37",]$class<-"S" # strange drift pattern, but all sit
+burst_summary[burst_summary$burstID=="08611854_02_130",]$class<-"T" # just has gap in middle
+
+#write burst summary
+#write.csv(burst_summary, "analyses/burst_summary_dat.csv", quote=F, row.names = F)
+
+#attrib to dat_sf and write out
+#dat_sf<-left_join(dat_sf, burst_summary[c("burstID", "class")], by="burstID")
+#st_write(dat_sf, "analyses/GIS/tripdat_behav_burst_summary.shp")
 
 # lots of variation in temp.. maybe correlated with solar heating?
 
