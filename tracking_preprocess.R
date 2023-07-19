@@ -8,6 +8,7 @@ library(track2KBA)
 library(tmap)
 library(sf)
 library(EMbC)
+library(geosphere)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -70,13 +71,7 @@ sumTrips
 
 # use trips object for further analyses
 tripdat<-trips@data
-names(tripdat)[names(tripdat)=="DateTime"]<-"DateTime_AEDT" # rest name
-
-# quick check
-ggplot(data=tripdat)+
-  geom_point(aes(x=DateTime_AEDT, y=ColDist, colour=tripID))+
-  geom_vline(xintercept=ymd_hms("23-04-01 17:59:00", tz="Australia/Sydney"))+
-  facet_wrap(~ID)
+names(tripdat)[names(tripdat)=="DateTime"]<-"DateTime_AEDT" # reset name
 
 ##### now segment data to classify each ~ 5 minute burst, add tdiff and distance between pts ####
 
@@ -96,7 +91,9 @@ for(i in 1:nrow(tripdat1)){
 tripdat1_sf<-st_as_sf(tripdat1, coords=c("Longitude", "Latitude"), crs=4326)
 tripdat1_sf<-cbind(tripdat1_sf, c(st_geometry(tripdat1_sf)[2:nrow(tripdat1_sf)], st_geometry(tripdat1_sf)[1]))%>%
   mutate(dist_diff = st_distance(geometry, geometry.1, by_element = T))
-tripdat1$dist_diff<-tripdat1_sf$dist_diff
+tripdat1$dist_diff<-c(as.numeric(tripdat1_sf$dist_diff[1:(nrow(tripdat1_sf)-1)]), 0)
+tripdat1$bearing_diff<-c(apply(tripdat1_sf[1:(nrow(tripdat1_sf)-1),], 1,
+                               function(x){(geosphere::bearing(unlist(x["geometry"]), unlist(x["geometry.1"]))+360)%%360}), 0)
 
 tripdat2$tdiff<-c(diff(tripdat2$DateTime_AEDT),0)
 tripdat2$burstID<-NA
@@ -109,7 +106,10 @@ for(i in 1:nrow(tripdat2)){
 tripdat2_sf<-st_as_sf(tripdat2, coords=c("Longitude", "Latitude"), crs=4326)
 tripdat2_sf<-cbind(tripdat2_sf, c(st_geometry(tripdat2_sf)[2:nrow(tripdat2_sf)], st_geometry(tripdat2_sf)[1]))%>%
   mutate(dist_diff = st_distance(geometry, geometry.1, by_element = T))
-tripdat2$dist_diff<-tripdat2_sf$dist_diff
+tripdat2$dist_diff<-c(as.numeric(tripdat2_sf$dist_diff[1:(nrow(tripdat2)-1)]), 0)
+tripdat2$bearing_diff<-c(apply(tripdat2_sf[1:(nrow(tripdat2_sf)-1),], 1,
+                               function(x){(geosphere::bearing(unlist(x["geometry"]), unlist(x["geometry.1"]))+360)%%360}), 0)
+
 
 tripdat<-rbind(tripdat1, tripdat2) # bind up again
 tripdat$geometry.1<-NULL
@@ -229,8 +229,6 @@ burst_summary[burst_summary$class=="I",]$burstID
 tripdat<-tripdat%>%filter(!(burstID=="-1_22" & deployed_ID=="predeployment")) # drop some predeployemnt locs from a burst
 burst_summary[burst_summary$burstID=="-1_22",]$class<-"S"
 
-tripdat[tripdat$burstID=="08611854_01_123"&ColDist<500,]
-
 tripdat<-tripdat%>%filter(!(burstID=="08611854_01_123" &ColDist<500)) # drop some near col pts from burst
 burst_summary[burst_summary$burstID=="08611854_01_123",]$class<-"S"
 
@@ -241,6 +239,9 @@ burst_summary[burst_summary$burstID=="08611854_02_130",]$class<-"T" # just has g
 
 #write burst summary
 #write.csv(burst_summary, "analyses/burst_summary_dat.csv", quote=F, row.names = F)
+
+#write tripdat to upload to Movebank for for ENV-data extraction 
+#write.csv(tripdat[c("Latitude", "Longitude","DateTime_UTC","DateTime_AEDT", "ID", "tripID")], "analyses/tripdat_4_movebank.csv", quote=F, row.names = F)
 
 #attrib to dat_sf and write out
 #dat_sf<-left_join(dat_sf, burst_summary[c("burstID", "class")], by="burstID")
