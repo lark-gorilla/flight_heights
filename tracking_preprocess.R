@@ -9,6 +9,9 @@ library(tmap)
 library(sf)
 library(EMbC)
 library(geosphere)
+library(suncalc)
+
+#### Load data and prep ####
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -40,7 +43,9 @@ dat_sf<-st_as_sf(dat, coords=c("lon", "lat"), crs=4326)
 tmap_mode("view")
 tm_shape(dat_sf)+tm_dots(col="deployed_ID")+tm_mouse_coordinates()
 
-# track2kba workflow to get extra fields
+#### ---- ####
+
+#### track2kba workflow to get extra fields ####
 
 dataGroup <- formatFields(
   dataGroup = dat, 
@@ -68,12 +73,13 @@ sumTrips <- tripSummary(trips = trips, colony = colony)
 
 sumTrips
 
-
 # use trips object for further analyses
 tripdat<-trips@data
 names(tripdat)[names(tripdat)=="DateTime"]<-"DateTime_AEDT" # reset name
 
-##### now segment data to classify each ~ 5 minute burst, add tdiff and distance between pts ####
+#### ---- ####
+
+##### now segment data to classify each ~ 5 minute burst, also variables that use diff between locs: time, distance, bearing ####
 
 #temporarily split out birds
 
@@ -114,6 +120,11 @@ tripdat2$bearing_diff<-c(apply(tripdat2_sf[1:(nrow(tripdat2_sf)-1),], 1,
 tripdat<-rbind(tripdat1, tripdat2) # bind up again
 tripdat$geometry.1<-NULL
 tripdat$speed_diff<-as.numeric(tripdat$dist_diff/as.numeric(tripdat$tdiff)) # get speed between points (don't trust device speed)
+
+#### ---- ####
+
+#### clean up identified bursts ####
+
 # remove 3 erroneous datapoints over 50 m/s
 tripdat<-tripdat%>%filter(speed_diff<50)
 
@@ -141,6 +152,7 @@ tm_shape(dat_sf)+tm_dots(col="burstID")+tm_mouse_coordinates()
 # yes remove bursts < 6 seconds
 tripdat<-tripdat%>%filter(!burstID%in%short_bursts)
 
+#### ---- ####
 
 #### classify flying/sitting points using speed ####
 
@@ -162,7 +174,9 @@ ggplot()+
 tripdat$sit_fly<-"fly"
 tripdat[tripdat$speed_diff<4,]$sit_fly<-"sit"
 
-#### classify behaviour using EmBC ####
+#### ---- ####
+
+#### classify behaviour using EmBC and add day/night classification ####
 
 forembc <- tripdat[,c('DateTime_AEDT', 'Longitude', 'Latitude', 'tripID')] #time, longitude, latitude, ID ( ! order is important !)
 
@@ -180,15 +194,21 @@ tripdat$embc <- gsub("3","commuting",tripdat$embc)
 tripdat$embc <- gsub("4","relocating",tripdat$embc)
 tripdat$embc <- gsub("5","DD",tripdat$embc)
 
-
 # convert to spatial
 dat_sf<-st_as_sf(tripdat, coords=c("Longitude", "Latitude"), crs=4326)
 #view in tmap
 tmap_mode("view")
 tm_shape(dat_sf)+tm_dots(col="embc")+tm_mouse_coordinates()
 
+# Add day night classification.. slow loop
+tripdat$daynight<-"day"
+for(i in 1:nrow(tripdat)){
+dn1<-getSunlightTimes(date = as.Date(tripdat$DateTime_AEDT[i]), lat = tripdat$Latitude[i], lon = tripdat$Longitude[i],tz = "Australia/Sydney")
+if(tripdat$DateTime_AEDT[i]>dn1$nauticalDusk  &   tripdat$DateTime_AEDT[i]<dn1$nightEnd){tripdat$daynight[i]<-"night"};print(i)}                       
 
-#### classify each burst based on behavior ####
+#### ---- ####
+
+#### Manually classify each burst based on behavior ####
 
 # make burst summary table
 
@@ -246,6 +266,17 @@ burst_summary[burst_summary$burstID=="08611854_02_130",]$class<-"T" # just has g
 #attrib to dat_sf and write out
 #dat_sf<-left_join(dat_sf, burst_summary[c("burstID", "class")], by="burstID")
 #st_write(dat_sf, "analyses/GIS/tripdat_behav_burst_summary.shp")
+
+#### ---- ####
+
+#### Import ENV-data attributed from Movebank and join ####
+
+move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank Shy Albatross Bass Strait-22228471852684413.csv")
+
+
+
+#### ---- ####
+
 
 # lots of variation in temp.. maybe correlated with solar heating?
 
