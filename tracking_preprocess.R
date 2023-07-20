@@ -10,6 +10,8 @@ library(sf)
 library(EMbC)
 library(geosphere)
 library(suncalc)
+library(rwind)
+
 
 #### Load data and prep ####
 
@@ -273,14 +275,35 @@ burst_summary[burst_summary$burstID=="08611854_02_130",]$class<-"T" # just has g
 
 move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank Shy Albatross Bass Strait-22228471852684413.csv")
 
+# rename varibles we care about for analyses
+names(move_env)[names(move_env)=="ECMWF.ERA5.SL.Mean.Sea.Level.Pressure"]<-"mean_sea_level_pressure"
+names(move_env)[names(move_env)=="ECMWF.ERA5.SL.Surface.Air.Pressure"]<-"surface_air_pressure"
+names(move_env)[names(move_env)=="ETOPO1.Elevation"]<-"bathy"
+names(move_env)[names(move_env)=="NASA.Distance.to.Coast"]<-"dist2coast"
 
+# convert wind u and v to speed and direction
+
+wind_df<-as.data.frame(uv2ds(move_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+               move_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.))
+names(wind_df)[1]<-"wind_dir"
+names(wind_df)[2]<-"wind_speed"
+
+# combine with tracking and calc bird-wind bearing difference, then classify into tail, cross and head-wind
+
+tripdat<-cbind(tripdat, wind_df)
+
+tripdat$b_w_diff<-ifelse(abs(tripdat$bearing_diff - tripdat$wind_dir)>180, 
+                          180-(abs(tripdat$bearing_diff - tripdat$wind_dir)-180), abs(tripdat$bearing_diff - tripdat$wind_dir))
+
+tripdat$b_w_class<-cut(tripdat$b_w_diff, breaks=c(0, 45, 135, 180), labels=c("tailwind", "crosswind","headwind"))
+
+# add other env data of interest to tripdat
+
+tripdat<-cbind(tripdat,move_env[c("mean_sea_level_pressure" , "surface_air_pressure","bathy","dist2coast")])
 
 #### ---- ####
 
+# select important columns and export tripdat
 
-# lots of variation in temp.. maybe correlated with solar heating?
-
-ggpairs(data=dat%>%filter(DateTime_AEDT>ymd_hms("23-04-01 17:59:00", tz="Australia/Sydney")),
-        columns=c("DateTime_AEDT", "lat", "iSolar", "alt", "temp",
-                  "pres_pa"), ggplot2::aes(colour=ID))
+#write.csv(tripdat%>%dplyr::select(c(4:6, 9:14, 20, 21, 24:28, 32:48)), "analyses/tripdat_4_analyses.csv", quote=F, row.names=F)
 
