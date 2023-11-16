@@ -20,24 +20,29 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 # Combine data from two tags that uploaded data while on birds
 
 dat<-rbind(data.frame(read.csv("data/shy_albatross_island/gps_89460800120108611854.csv"), ID="08611854"),
-           data.frame(read.csv("data/shy_albatross_island/gps_89460800120141490936.csv"), ID="41490936"))
+           data.frame(read.csv("data/shy_albatross_island/gps_89460800120141490936.csv"), ID="41490936"),
+           data.frame(read.csv("data/shy_albatross_island/gps_89460800120108611649.csv"), ID="08611649"))
 
 table(dat$iccid)
 table(dat$ID)
 
+dat<-dat[-80141,] # fix
+
 dat$DateTime_UTC<-ymd_hms(dat$time_UTC, tz="UTC")
 dat$DateTime_AEDT<-with_tz(dat$DateTime_UTC, "Australia/Sydney")
 
-# remove 3 positional errors
-ggplot(data=dat)+geom_point(aes(x=lon, y=lat, colour=ID))
-dat<-dat[dat$lat<0,] # 3 of them but don't remove as valid pressure and temp
+# remove a few positional errors
+#ggplot(data=dat)+geom_point(aes(x=lon, y=lat, colour=ID))
+dat<-dat[dat$lat<0,]
 
 #identify time pre/post deployment on each bird
 # 854 out 23-04-01 17:12:00
 # 936 out 23-04-01 17:59:00
-dat$deployed_ID<-dat$ID
+dat$deployed_ID<-as.character(dat$ID)
 dat[dat$DateTime_AEDT<ymd_hms("23-04-01 17:12:00", tz="Australia/Sydney") & dat$ID== "08611854",]$deployed_ID<-"predeployment"
 dat[dat$DateTime_AEDT<ymd_hms("23-04-01 17:59:00", tz="Australia/Sydney") & dat$ID== "41490936",]$deployed_ID<-"predeployment"
+dat[dat$DateTime_AEDT<ymd_hms("23-09-29 03:10:00", tz="Australia/Sydney") & dat$ID== "08611649",]$deployed_ID<-"predeployment"
+
 
 # convert to spatial
 dat_sf<-st_as_sf(dat, coords=c("lon", "lat"), crs=4326)
