@@ -55,7 +55,7 @@ tm_shape(dat_sf)+tm_dots(col="deployed_ID")+tm_mouse_coordinates()
 #### track2kba workflow to get extra fields ####
 
 dataGroup <- formatFields(
-  dataGroup = dat, 
+  dataGroup = dat[dat$deployed_ID!='predeployment',], 
   fieldID   = "ID", 
   fieldDateTime = "DateTime_AEDT", 
   fieldLon  = "lon", 
@@ -92,6 +92,7 @@ names(tripdat)[names(tripdat)=="DateTime"]<-"DateTime_AEDT" # reset name
 
 tripdat1<-tripdat%>%filter(ID=="08611854")
 tripdat2<-tripdat%>%filter(ID=="41490936")
+tripdat3<-tripdat%>%filter(ID=="08611649")
 
 tripdat1$tdiff<-c(diff(tripdat1$DateTime_AEDT),0)
 tripdat1$burstID<-NA
@@ -123,8 +124,23 @@ tripdat2$dist_diff<-c(as.numeric(tripdat2_sf$dist_diff[1:(nrow(tripdat2)-1)]), 0
 tripdat2$bearing_diff<-c(apply(tripdat2_sf[1:(nrow(tripdat2_sf)-1),], 1,
                                function(x){(geosphere::bearing(unlist(x["geometry"]), unlist(x["geometry.1"]))+360)%%360}), 0)
 
+tripdat3$tdiff<-c(diff(tripdat3$DateTime_AEDT),0)
+tripdat3$burstID<-NA
 
-tripdat<-rbind(tripdat1, tripdat2) # bind up again
+counter=1
+for(i in 1:nrow(tripdat3)){
+  tripdat3$burstID[i]<-paste(tripdat3$tripID[i], counter, sep="_")
+  if(tripdat3$tdiff[i]>100|is.na(tripdat3$tdiff[i])){counter=counter+1};print(i)}
+
+tripdat3_sf<-st_as_sf(tripdat3, coords=c("Longitude", "Latitude"), crs=4326)
+tripdat3_sf<-cbind(tripdat3_sf, c(st_geometry(tripdat3_sf)[2:nrow(tripdat3_sf)], st_geometry(tripdat3_sf)[1]))%>%
+  mutate(dist_diff = st_distance(geometry, geometry.1, by_element = T))
+tripdat3$dist_diff<-c(as.numeric(tripdat3_sf$dist_diff[1:(nrow(tripdat3)-1)]), 0)
+tripdat3$bearing_diff<-c(apply(tripdat3_sf[1:(nrow(tripdat3_sf)-1),], 1,
+                               function(x){(geosphere::bearing(unlist(x["geometry"]), unlist(x["geometry.1"]))+360)%%360}), 0)
+
+
+tripdat<-rbind(tripdat1, tripdat2, tripdat3) # bind up again
 tripdat$geometry.1<-NULL
 tripdat$speed_diff<-as.numeric(tripdat$dist_diff/as.numeric(tripdat$tdiff)) # get speed between points (don't trust device speed)
 
@@ -169,13 +185,13 @@ ggplot(data=tripdat%>%filter(is.finite(speed_diff)))+geom_histogram(aes(x=speed_
 tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1 & speed_diff>4)%>%
   summarise(mean_s=mean(speed_diff), sd_s=sd(speed_diff))
 #mean_s     sd_s
-#1 13.18934 4.017213
+#1 13.4574 4.1042
 
 #plot non-island points 
 ggplot()+
   geom_histogram(data=tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1),
                  aes(x=speed_diff, fill=ifelse(speed_diff<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
-  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.19±4 m/s"), size=5)+
+  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.46±4.1 m/s"), size=5)+
   scale_x_continuous(breaks=0:40)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
 
 tripdat$sit_fly<-"fly"
@@ -249,30 +265,27 @@ for(i in unique(tripdat$burstID))
   print(burst_summary[burst_summary$burstID==i,])
 }
 
-# explore 6 'I' classifications
+# explore 4 'I' classifications
 burst_summary[burst_summary$class=="I",]$burstID
 
 # Tidying code
-tripdat<-tripdat%>%filter(!(burstID=="-1_22" & deployed_ID=="predeployment")) # drop some predeployemnt locs from a burst
-burst_summary[burst_summary$burstID=="-1_22",]$class<-"S"
+tripdat<-tripdat%>%filter(!(burstID=="08611854_01_66" &ColDist<500)) # drop some near col pts from burst
+burst_summary[burst_summary$burstID=="08611854_01_66",]$class<-"S"
 
-tripdat<-tripdat%>%filter(!(burstID=="08611854_01_123" &ColDist<500)) # drop some near col pts from burst
-burst_summary[burst_summary$burstID=="08611854_01_123",]$class<-"S"
+burst_summary[burst_summary$burstID=="08611854_02_73",]$class<-"T" # just has gap in middle
+burst_summary[burst_summary$burstID=="08611854_04_121",]$class<-"S" # just has gap in middle
+burst_summary[burst_summary$burstID=="08611854_06_155",]$class<-"L" # just has gap in middle
 
-burst_summary[burst_summary$burstID=="08611854_04_178",]$class<-"S" # just has gap in middle
-burst_summary[burst_summary$burstID=="08611854_06_212",]$class<-"L" # just has gap in middle
-burst_summary[burst_summary$burstID=="41490936_01_37",]$class<-"S" # strange drift pattern, but all sit
-burst_summary[burst_summary$burstID=="08611854_02_130",]$class<-"T" # just has gap in middle
 
 #write burst summary
-#write.csv(burst_summary, "analyses/burst_summary_dat.csv", quote=F, row.names = F)
+#write.csv(burst_summary, "analyses/burst_summary_dat_all.csv", quote=F, row.names = F)
 
 #write tripdat to upload to Movebank for for ENV-data extraction 
-#write.csv(tripdat[c("Latitude", "Longitude","DateTime_UTC","DateTime_AEDT", "ID", "tripID")], "analyses/tripdat_4_movebank.csv", quote=F, row.names = F)
+#write.csv(tripdat[c("Latitude", "Longitude","DateTime_UTC","DateTime_AEDT", "ID", "tripID")], "analyses/tripdat_4_movebank_all.csv", quote=F, row.names = F)
 
 #attrib to dat_sf and write out
 #dat_sf<-left_join(dat_sf, burst_summary[c("burstID", "class")], by="burstID")
-#st_write(dat_sf, "analyses/GIS/tripdat_behav_burst_summary.shp")
+#st_write(dat_sf, "analyses/GIS/tripdat_all_behav_burst_summary.shp")
 
 #### ---- ####
 
