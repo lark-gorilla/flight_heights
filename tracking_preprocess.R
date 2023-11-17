@@ -10,7 +10,7 @@ library(sf)
 library(EMbC)
 library(geosphere)
 library(suncalc)
-library(rwind)
+library(rWind)
 
 
 #### Load data and prep ####
@@ -276,7 +276,6 @@ burst_summary[burst_summary$burstID=="08611854_02_73",]$class<-"T" # just has ga
 burst_summary[burst_summary$burstID=="08611854_04_121",]$class<-"S" # just has gap in middle
 burst_summary[burst_summary$burstID=="08611854_06_155",]$class<-"L" # just has gap in middle
 
-
 #write burst summary
 #write.csv(burst_summary, "analyses/burst_summary_dat_all.csv", quote=F, row.names = F)
 
@@ -292,6 +291,10 @@ burst_summary[burst_summary$burstID=="08611854_06_155",]$class<-"L" # just has g
 #### Import ENV-data attributed from Movebank and join ####
 
 move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank Shy Albatross Bass Strait-22228471852684413.csv")
+
+# also read in spatial data with full data stored, but drop spatial part
+
+tripdat<-st_read("analyses/GIS/tripdat_all_behav_burst_summary.shp")%>%st_drop_geometry()
 
 # rename varibles we care about for analyses
 names(move_env)[names(move_env)=="ECMWF.ERA5.SL.Mean.Sea.Level.Pressure"]<-"mean_sea_level_pressure"
@@ -322,6 +325,8 @@ tripdat<-cbind(tripdat,move_env[c("mean_sea_level_pressure" , "surface_air_press
 #### ---- ####
 
 # select important columns and export tripdat
+
+# remember to also select in burst class!
 
 #write.csv(tripdat%>%dplyr::select(c(4:6, 9:14, 20, 21, 24:28, 32:48)), "analyses/tripdat_4_analyses.csv", quote=F, row.names=F)
 
