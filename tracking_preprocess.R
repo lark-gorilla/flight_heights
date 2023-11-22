@@ -279,6 +279,9 @@ burst_summary[burst_summary$burstID=="08611854_06_155",]$class<-"L" # just has g
 #write burst summary
 #write.csv(burst_summary, "analyses/burst_summary_dat_all.csv", quote=F, row.names = F)
 
+#attrib burst summary
+tripdat<-left_join(tripdat, burst_summary[c("burstID", "class")], by="burstID")
+
 #write tripdat to upload to Movebank for for ENV-data extraction 
 #write.csv(tripdat[c("Latitude", "Longitude","DateTime_UTC","DateTime_AEDT", "ID", "tripID")], "analyses/tripdat_4_movebank_all.csv", quote=F, row.names = F)
 
