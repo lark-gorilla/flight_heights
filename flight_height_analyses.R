@@ -6,6 +6,8 @@
 library(ggplot2)
 library(dplyr)
 library(rayshader)
+library(patchwork)
+library(lubridate)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -13,7 +15,7 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 
 dat<-read.csv("analyses/tripdat_4_analyses.csv", h=T)
 
-table(dat$class)
+table(dat$burstID, dat$class)
 
 ## calc flight heights, do all but only ware about T and A burst classes
 
@@ -23,38 +25,85 @@ k=8.31432
 m=0.0289644
 g=9.80665
 
+# for p0 per burst we want to identify pressure level at sea level, we can assume waves
+# so finding upper 95th? quantile could represent burst mean sea level, negative values 
+# in resultant flight height would be wave troughs. A more precise method would find the 
+# max pressure point of each osscillation (after a short window smooth to remove error),
+# and then take the mean of these points, you could even run a gam through these if we
+# expect local pressure changes to change over the burst - possible on transiting bursts.
+# Question we need answered if if birds always meet the surface during their soaring oscillation
+# Anchoring each oscillaition to the sea surface removes negative values but probably 
+# overestimates.. hmm also look at a small moving window to clean up 
+
 dat$pres_alt<-NA
 for (i in unique(dat$burstID))
 {
-  # get 95% CI - want upper as high pressure = low altitude 
-  burst_pres<-dat[dat$burstID==i,]$pres_pa
-  a <- mean(burst_pres)
-  s <- sd(burst_pres)
-  n <- length(burst_pres)
-  error <- qnorm(0.975)*s/sqrt(n)
-  lwr_CI<- a-error
+  # get 95% quantile of burst - want upper as high pressure = low altitude 
+  upper_95<-quantile(burst_pres<-dat[dat$burstID==i,]$pres_pa,
+           probs=0.95)
   
-  #cant get ci to work using min for the moment
-  lwr_CI<-max(burst_pres)
   
-  dat[dat$burstID==i,]$pres_alt<-abs(
-    ((k*(dat[dat$burstID==i,]$temp+273.15))/(m*g))*log(dat[dat$burstID==i,]$pres_pa/lwr_CI))
+  dat[dat$burstID==i,]$pres_alt<-(-1*
+    ((k*(dat[dat$burstID==i,]$temp+273.15))/(m*g))*log(dat[dat$burstID==i,]$pres_pa/upper_95)) # *-1 flips negative/positive values
 }
 
+# do overall distribution for flying birds
 
-p0 = 1013.25# not a constant but rough estimate of sea level pressure # 1016 for melbourne at time?
-#p and p0 in mbar
-#T in kelvin
-dat$p0_melb<-1016
-dat[ grep(" 23:", dat$Time_orig), ]$p0_melb<-1015
-dat[ grep(" 00:", dat$Time_orig), ]$p0_melb<-1015
 
-dat$temp_K=dat$temp+ 273.15
 
-dat$height=((k*dat$temp_K)/(m*g))*log(dat$pressure/p0)
 
 # 3d plot
 
-p1<-ggplot(data=dat[dat$burstID==i,])+geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt))
+ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=tim_UTC, y=pres_pa, group=1))+geom_point(aes(x=tim_UTC, y=pres_pa), size=1)+geom_hline(yintercept=upper_95, col='red')+scale_y_reverse()
+
+p1<-ggplot(data=dat[dat$burstID==i,])+geom_point(aes(x=X, y=Y, colour=pres_alt))
 
 plot_gg(p1)
+
+# 3d plot to google earth
+
+temp1<-dat
+temp1$tim_UTC<-ymd_hms(temp1$tim_UTC)
+temp1$DESCRIPTION=temp1$class
+
+#sf4d<-temp1%>%st_as_sf(coords = c("X", "Y", "pres_alt", "tim_UTC"), crs = 4326, dim = "XYZM")
+
+sf3d<-temp1[c("DESCRIPTION","X", "Y", "pres_alt")]%>%
+  st_as_sf(coords = c("X", "Y", "pres_alt"), crs = 4326, dim = "XYZ")
+
+st_write(sf3d, "analyses/GIS/google_earth_3d_vis.kml", driver='kml')
+
+# find good bursts
+
+T_b<-dat%>%filter(class=='T')%>%pull(burstID)%>%unique()
+
+for(j in T_b){
+p2<-ggplot(data=dat[dat$burstID==j,])+geom_line(aes(x=tim_UTC, y=pres_pa, group=1))+
+  geom_point(aes(x=tim_UTC, y=pres_pa), size=1)+scale_y_reverse()
+p3<-ggplot(data=dat[dat$burstID==j,])+geom_line(aes(x=X, y=Y, group=1))+
+  geom_point(aes(x=X, y=Y, colour=pres_alt))
+p2/p3             
+print(p2/p3)
+print(j)
+readline("")
+}
+
+#"08611854_01_64"
+"08611854_02_68"
+"08611854_02_69"
+"08611854_02_70"
+"08611854_02_71"
+
+p2<-ggplot(data=dat[dat$burstID==j,])+geom_line(aes(x=tim_UTC, y=pres_pa, group=1))+
+  geom_point(aes(x=tim_UTC, y=pres_pa), size=1)+geom_hline(yintercept=upper_95, col='red')+scale_y_reverse()
+
+# test export as kmz
+
+temp1<-dat
+temp1$tim_UTC<-ymd_hms(temp1$tim_UTC)
+
+#sf4d<-temp1%>%st_as_sf(coords = c("X", "Y", "pres_alt", "tim_UTC"), crs = 4326, dim = "XYZM")
+
+sf3d<-temp1%>%st_as_sf(coords = c("X", "Y", "pres_alt"), crs = 4326, dim = "XYZ")
+
+st_write(sf3d, "C:/Users/mmil0049/Downloads/temp.kml")
