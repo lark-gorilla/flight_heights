@@ -293,43 +293,56 @@ tripdat<-left_join(tripdat, burst_summary[c("burstID", "class")], by="burstID")
 
 #### Import ENV-data attributed from Movebank and join ####
 
-move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank Shy Albatross Bass Strait-22228471852684413.csv")
+move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank shy albatross 4-193975714928544020.csv")
+tripdat<-read.csv("analyses/tripdat_4_movebank_all.csv", h=T)
 
-# also read in spatial data with full data stored, but drop spatial part
+# ~300 less rows in movebank than tripdat so do join to work out
+tripdat$DateTime_AEDT<-as_datetime(tripdat$DateTime_AEDT, tz="Australia/Sydney")
+move_env$DateTime_AEDT<-with_tz(as_datetime(move_env$timestamp, tz="UTC"), "Australia/Sydney")
 
-tripdat<-st_read("analyses/GIS/tripdat_all_behav_burst_summary.shp")%>%st_drop_geometry()
+tripdat_env<-left_join(tripdat, move_env, by=c("ID"="tag.local.identifier", "DateTime_AEDT"))
+#~300 rows missed off end during join. but all crap pressure sensor data so no problem
+
+tripdat_env<-tripdat_env%>%select(!c("X", "Y", "time", "iccid", "time_UTC", "event.id","visible" , "timestamp" ,                                            
+                                      "location.long","location.lat" ,"sensor.type"  , "individual.taxon.canonical.name",                       
+                                     "individual.local.identifier","study.name"))
 
 # rename varibles we care about for analyses
-names(move_env)[names(move_env)=="ECMWF.ERA5.SL.Mean.Sea.Level.Pressure"]<-"mean_sea_level_pressure"
-names(move_env)[names(move_env)=="ECMWF.ERA5.SL.Surface.Air.Pressure"]<-"surface_air_pressure"
-names(move_env)[names(move_env)=="ETOPO1.Elevation"]<-"bathy"
-names(move_env)[names(move_env)=="NASA.Distance.to.Coast"]<-"dist2coast"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Sea.Level.Pressure"]<-"mean_sea_level_pressure"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Surface.Air.Pressure"]<-"surface_air_pressure"
+names(tripdat_env)[names(tripdat_env)=="ETOPO1.Elevation"]<-"bathy"
+names(tripdat_env)[names(tripdat_env)=="NASA.Distance.to.Coast"]<-"dist2coast"
+names(tripdat_env)[names(tripdat_env)=="MODIS.Ocean.Aqua.OceanColor.4km.8d.Nighttime.SST"]<-"sst"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Wave.Direction"]<-"wave_direction"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.10.Metre.Wind.Gust"]<-"windgust_10m"
+names(tripdat_env)[names(tripdat_env)=="  MODIS.Ocean.Aqua.OceanColor.4km.8d.Chlorophyll.A..OCI."]<-"chla"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Significant.Wave.Height"]<-"wave_height"
+names(tripdat_env)[names(tripdat_env)=="OSU.Ocean.NPP.0.083deg.8d.NPP"]<-"net_pp"
+names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Wave.Period"]<-"wave_period"
+
 
 # convert wind u and v to speed and direction
+non_wind_NA<-which(!is.na(tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.))
 
-wind_df<-as.data.frame(uv2ds(move_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
-               move_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.))
-names(wind_df)[1]<-"wind_dir"
-names(wind_df)[2]<-"wind_speed"
+wind_df<-as.data.frame(uv2ds(tripdat_env[non_wind_NA,]$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+                             tripdat_env[non_wind_NA,]$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.))
+
+tripdat_env$wind_dir<-NA
+tripdat_env$wind_speed<-NA
+
+tripdat_env[non_wind_NA,]$wind_dir<-wind_df$dir
+tripdat_env[non_wind_NA,]$wind_speed<-wind_df$speed
 
 # combine with tracking and calc bird-wind bearing difference, then classify into tail, cross and head-wind
 
-tripdat<-cbind(tripdat, wind_df)
 
-tripdat$b_w_diff<-ifelse(abs(tripdat$bearing_diff - tripdat$wind_dir)>180, 
-                          180-(abs(tripdat$bearing_diff - tripdat$wind_dir)-180), abs(tripdat$bearing_diff - tripdat$wind_dir))
+tripdat_env$b_w_diff<-ifelse(is.na(tripdat_env$wind_dir), NA, ifelse(abs(tripdat_env$bearing_diff - tripdat_env$wind_dir)>180, 
+                          180-(abs(tripdat_env$bearing_diff - tripdat_env$wind_dir)-180), abs(tripdat_env$bearing_diff - tripdat_env$wind_dir)))
 
-tripdat$b_w_class<-cut(tripdat$b_w_diff, breaks=c(0, 45, 135, 180), labels=c("tailwind", "crosswind","headwind"))
-
-# add other env data of interest to tripdat
-
-tripdat<-cbind(tripdat,move_env[c("mean_sea_level_pressure" , "surface_air_pressure","bathy","dist2coast")])
+tripdat_env$b_w_class<-cut(tripdat_env$b_w_diff, breaks=c(0, 45, 135, 180), labels=c("tailwind", "crosswind","headwind"))
 
 #### ---- ####
 
-# select important columns and export tripdat
 
-# remember to also select in burst class!
-
-#write.csv(tripdat%>%dplyr::select(c(4:6, 9:14, 20, 21, 24:28, 32:48)), "analyses/tripdat_4_analyses.csv", quote=F, row.names=F)
+#write.csv(tripdat_env, "analyses/tripdat_4_analyses_all.csv", quote=F, row.names=F)
 
