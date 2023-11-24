@@ -13,16 +13,41 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 
 # read data
 
-dat<-read.csv("analyses/tripdat_4_analyses.csv", h=T)
-burst_summary<-read.csv("analyses/burst_summary_dat.csv", h=T)
+dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
+burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 
 #attrib burst summary
-dat<-left_join(dat, burst_summary[c("burstID", "class")], by="burstID")
+#dat<-left_join(dat, burst_summary[c("burstID", "class")], by="burstID")
 dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT)
 dat<-dat%>%filter(deployed_ID!="predeployment")     
 
-
 table(dat$burstID, dat$class)
+
+bad_ids<-c(
+  "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
+  "08611854_01_35",  "08611854_01_41",  "08611854_01_46",  "08611854_01_47",
+  "08611854_01_48",  "08611854_01_49",  "08611854_01_50",  "08611854_01_51",
+  "08611854_01_52",  "08611854_01_65",  "-1_66",  "08611854_02_79",
+  "08611854_02_82",  "08611854_02_85",  "08611854_02_86",  "08611854_02_87",
+  "08611854_02_91",  "08611854_02_92",  "08611854_03_99",  "08611854_03_101",
+  "08611854_03_102",  "08611854_03_103",  "08611854_03_110",  "-1_111",
+  "08611854_04_123",  "08611854_04_124",  "08611854_04_125", # good example of bobbing, then swamp
+  "08611854_04_126",  "08611854_05_128",  "08611854_05_129",  "08611854_05_130",
+  "08611854_05_131",  "08611854_05_132",  "-1_133",  "08611854_06_134", # same
+  "08611854_06_136",  "08611854_06_139",  "08611854_06_140",  "08611854_06_153",
+  "08611854_06_157",  "08611854_06_161",  "08611854_06_162",  "08611854_06_163",
+  "08611854_06_164",  "08611854_06_166",  "08611854_06_167",  "08611854_06_168",
+  "08611854_06_169",  "08611854_06_172",  "08611854_06_175",  "08611854_06_176",
+  "08611854_06_178",  "08611854_06_183",  "08611854_06_185",  "08611854_06_188",
+  "08611854_07_191",  "08611854_07_192",  "08611854_07_195",  "08611854_07_196",
+  "08611854_08_199",  "08611854_08_200",  "08611854_08_201",  "41490936_01_16",
+  "08611649_01_11",  "08611649_01_12",  "08611649_01_16",  "08611649_01_16",
+  "08611649_01_18",  "08611649_01_19",  "08611649_01_21",  "08611649_01_25",
+  "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
+  "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
+  "08611649_01_40",  "08611649_01_41")
+  
+dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
 
 ## calc flight heights, do all but only ware about T and A burst classes
 
@@ -85,21 +110,16 @@ for (i in unique(dat$burstID))
    
 }
 
-  dat[dat$burstID==i,]$pres_alt<-(-1*
-    ((k*(dat[dat$burstID==i,]$temp+273.15))/(m*g))*log(dat[dat$burstID==i,]$pres_pa/dat[dat$burstID==i,]$p0)) # *-1 flips negative/positive values
 
-
-
-
-ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+scale_x_date(date_breaks="minutes")
 # do overall distribution for flying birds
 
-
-ggplot(data=dat%>%filter(class %in% c("T", "L", "A")& sit_fly=="fly"))+geom_histogram(aes(x=pres_alt), binwidth = 1)
+ggplot(data=dat%>%filter(class %in% c("T", "L") & sit_fly=="fly"))+geom_histogram(aes(x=pres_alt), binwidth = 1)
 
 ggplot(data=dat%>%filter(class %in% c("T", "L", "A")& sit_fly=="fly"))+geom_density(aes(x=pres_alt, fill=class))
 
+# compare pressure and GPS altitude
+
+ggplot(data=dat%>%filter(class %in% c("T", "L")& sit_fly=="fly"))+geom_density(aes(y=alt, x=pres_alt))
 
 
 
@@ -111,7 +131,7 @@ ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, 
   labs(y="Pressure (mb)", x="Time")+theme(axis.text=element_text(size=12),
                                                                                                                                                                            axis.title=element_text(size=14,face="bold"))
 
-# 3d plot with rayshader - example track
+# 3d plot with rayshader - example track ALSO check 08611854_06_146 for loopy example
 p1<-ggplot(data=dat[dat$burstID=="08611854_02_74",])+
   geom_point(aes(x=X, y=Y, colour=pres_alt))+scale_color_viridis_b()+
   labs(x="Longitude", y="Latitude", colour="   Altitude (m)")
