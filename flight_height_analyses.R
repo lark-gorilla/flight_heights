@@ -9,6 +9,7 @@ library(rayshader)
 library(patchwork)
 library(lubridate)
 library(viridis)
+library(sf)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -83,11 +84,68 @@ dat$pres_alt<-(-1*  # *-1 flips negative/positive values
 
 # do overall distribution for flying birds
 
-ggplot(data=dat%>%filter(class %in% c("T", "L") & sit_fly=="fly"))+geom_histogram(aes(x=pres_alt), binwidth = 1)
+mean(dat%>%filter(class %in% c("T", "L") & sit_fly=="fly")%>%pull(pres_alt), na.rm=T)
 
-ggplot(data=dat%>%filter(class %in% c("T", "L", "A")& sit_fly=="fly"))+geom_density(aes(x=pres_alt, fill=class))
+ggplot()+
+  geom_vline(xintercept=0, colour='blue', size=1)+
+  geom_vline(xintercept=10, colour='blue', size=0.5)+
+  geom_vline(xintercept=20, colour='blue', size=0.5)+
+  geom_vline(xintercept=4.209, colour='red',linetype='dotted', size=1)+
+  geom_label(aes(x=6.9, y=4200, label="Mean\n4.21 m"),size=5, col='red')+
+  geom_rect(aes(xmin=30, xmax=50, ymin=0, ymax=4300), fill='red', size=0.5, alpha=0.3)+
+  geom_histogram(data=dat%>%filter(class %in% c("T", "L") & sit_fly=="fly"), aes(x=pres_alt),colour=1, binwidth = 1)+
+  scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 50))+
+  labs(x="Altitude (m)", y="Number 3D datapoints (Lat,Lon,Pressure)")+theme_bw()+
+  theme(axis.text=element_text(size=12),
+         axis.title=element_text(size=14,face="bold"))
 
-# compare pressure and GPS altitude
+tl_dat<-dat%>%filter(class %in% c("T", "L") & sit_fly=="fly" & burstID!="-1_93")
+
+mean(tl_dat[tl_dat$pres_alt>0,]$pres_alt) # exclude negative vals
+  
+nrow(tl_dat[tl_dat$pres_alt<20,])/nrow(tl_dat)  
+nrow(tl_dat[tl_dat$pres_alt<30,])/nrow(tl_dat)
+nrow(tl_dat[tl_dat$pres_alt<10,])/nrow(tl_dat)
+nrow(tl_dat[tl_dat$pres_alt<5,])/nrow(tl_dat)
+
+# write out kmz of bird that crosses the island
+sf3d<-dat%>%filter(burstID=="-1_93")%>%st_as_sf(coords = c("Longitude", "Latitude", "pres_alt"), crs = 4326, dim = "XYZ")
+st_write(sf3d, "analyses/GIS/over_the_island_burst.kml")
+
+# test GPS difference
+
+sensor_comp<-rbind(data.frame(Sensor="gps", Altitude=tl_dat[tl_dat$alt<2000,]$alt),
+      data.frame(Sensor="pressure", Altitude=tl_dat[tl_dat$alt<2000,]$pres_alt))
+
+sensor_comp%>%group_by(Sensor)%>%summarise(mean_alt=mean(Altitude))
+
+ggplot(data=sensor_comp%>%filter(Altitude<90))+
+  geom_hline(yintercept=0, colour='blue', size=1)+
+  geom_jitter(aes(x=Sensor, y=Altitude), height=0, width=0.4, alpha=0.1, shape=16, size=1.5)+
+  geom_violin(aes(x=Sensor, y=Altitude, colour=Sensor), fill=NA, size=1)+
+  scale_y_continuous(breaks=seq(-50, 90, 10),minor_breaks=seq(-50, 90, 5))+
+  labs(y="Altitude (m)")+theme_bw()+
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),legend.position="none")
+  
+# test windspeed
+
+ggplot(data=tl_dat, aes(x=wind_speed, y=pres_alt))+
+  geom_point(alpha=0.1)+geom_smooth(method='lm')+facet_wrap(~b_w_class)
+
+av_dat<-tl_dat%>%group_by(burstID)%>%summarise(mn_alt=mean(pres_alt), mn_w_speed=mean(wind_speed, na.rm=T))
+
+ggplot()+
+  geom_hline(yintercept=0, colour='blue', size=1)+
+  geom_point(data=tl_dat, aes(x=wind_speed, y=pres_alt), alpha=0.05)+
+  geom_smooth(data=av_dat, aes(x=mn_w_speed, y=mn_alt), method='lm', colour='red', fill='pink')+
+  scale_y_continuous(breaks=seq(-4,24,2), limits=c(-4, 24))+
+  scale_x_continuous(breaks=seq(0,15,1))+
+  labs(y="Altitude (m)", x="Windspeed (m/s)")+theme_bw()+
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14,face="bold"),legend.position="none")
+
+ mjyuy# compare pressure and GPS altitude
 
 ggplot(data=dat%>%filter(class %in% c("T", "L")& sit_fly=="fly"))+geom_density(aes(y=alt, x=pres_alt))
 
@@ -101,16 +159,16 @@ ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, 
   labs(y="Pressure (mb)", x="Time")+theme(axis.text=element_text(size=12),
                                                                                                                                                                            axis.title=element_text(size=14,face="bold"))
 
-# 3d plot with rayshader - example track ALSO check 08611854_06_146 for loopy example or T alt: 41490936_01_24
-p1<-ggplot(data=dat[dat$burstID=="08611854_02_74",])+
-  geom_point(aes(x=X, y=Y, colour=pres_alt))+scale_color_viridis_b()+
+# 3d plot with rayshader - example track ALSO check 08611854_06_146 for loopy example and "08611854_04_120" for Alight
+p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt))+scale_color_viridis()+
   labs(x="Longitude", y="Latitude", colour="   Altitude (m)")
 
 plot_gg(p1, height=3, width=8, pointcontract = 0.7)
 
 #comparison with GPS
-p1<-ggplot(data=dat[dat$burstID=="08611854_02_74",])+
-  geom_point(aes(x=X, y=Y, colour=alt))+scale_color_viridis_b()+
+p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=alt))+scale_color_viridis()+
   labs(x="Longitude", y="Latitude", colour="   Altitude (m)")
 
 plot_gg(p1, height=3, width=8, pointcontract = 0.7)
