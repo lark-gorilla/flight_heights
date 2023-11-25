@@ -25,12 +25,41 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 
 # read data
 
-dat<-read.csv("analyses/tripdat_4_movebank_all.csv", h=T)
+dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
 burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 
 #attrib burst summary
+#dat<-left_join(dat, burst_summary[c("burstID", "class")], by="burstID")
 dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT)
 dat<-dat%>%filter(deployed_ID!="predeployment")     
+
+table(dat$burstID, dat$class)
+
+bad_ids<-c(
+  "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
+  "08611854_01_35",  "08611854_01_41","08611854_01_42",  "08611854_01_46",  "08611854_01_47",
+  "08611854_01_48",  "08611854_01_49",  "08611854_01_50",  "08611854_01_51",
+  "08611854_01_52", "08611854_01_55", "08611854_01_65",  "-1_66",  "08611854_02_79",
+  "08611854_02_82",  "08611854_02_85",  "08611854_02_86",  "08611854_02_87",
+  "08611854_02_91",  "08611854_02_92",  "08611854_03_99",  "08611854_03_101",
+  "08611854_03_102",  "08611854_03_103",  "08611854_03_110",  "-1_111",
+  "08611854_04_123",  "08611854_04_124",  "08611854_04_125", # good example of bobbing, then swamp
+  "08611854_04_126",  "08611854_05_128",  "08611854_05_129",  "08611854_05_130",
+  "08611854_05_131",  "08611854_05_132",  "-1_133",  "08611854_06_134", # same
+  "08611854_06_136",  "08611854_06_139",  "08611854_06_140",  "08611854_06_153",
+  "08611854_06_157",  "08611854_06_161",  "08611854_06_162",  "08611854_06_163",
+  "08611854_06_164",  "08611854_06_166",  "08611854_06_167",  "08611854_06_168",
+  "08611854_06_169",  "08611854_06_172",  "08611854_06_175",  "08611854_06_176",
+  "08611854_06_178",  "08611854_06_183",  "08611854_06_185",  "08611854_06_188",
+  "08611854_07_191",  "08611854_07_192",  "08611854_07_195",  "08611854_07_196",
+  "08611854_08_199",  "08611854_08_200",  "08611854_08_201",  "41490936_01_16",
+  "08611649_01_11",  "08611649_01_12",  "08611649_01_16",  "08611649_01_16",
+  "08611649_01_18",  "08611649_01_19",  "08611649_01_21",  "08611649_01_25",
+  "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
+  "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
+  "08611649_01_40",  "08611649_01_41", "08611649_01_17")
+  
+dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
 
 ## calc flight heights, do all but only ware about T and A burst classes
 
@@ -52,10 +81,13 @@ g=9.80665
 
 dat$index<-1:nrow(dat)
 dat$p0<-0
+dat$p0_orig<-0
 
 dat$pres_alt<-NA
 for (i in unique(dat$burstID))
 {
+   # original method - 95% upper qunatile of pressure to set p0 for entire burst
+  dat[dat$burstID==i,]$p0_orig<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
   
   #split burst in 5 (= 1 minute sub-bursts) then 
   # get 95% quantile of sub-burst pressure to use as p0 for sub burst
@@ -76,10 +108,10 @@ for (i in unique(dat$burstID))
   mod_dat$pred2<-predict(m2, mod_dat)
   
   dat[dat$burstID==i,]$pres_alt<-(-1*  # *-1 flips negative/positive values
-                                    ((k*(mod_dat$temp+273.15))/(m*g))*log(mod_dat$pres_pa/mod_dat$pred)) # using pred as p0
+                          ((k*(mod_dat$temp+273.15))/(m*g))*log(dat[dat$burstID==i,]$pres_pa/dat[dat$burstID==i,]$p0_orig)) # using p0_orig as p0
 
   p2<-ggplot(data=mod_dat)+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-    geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
+    geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0_orig), col='red')+
     geom_line(aes(x=DateTime_AEDT, y=pred), col='green')+
     geom_line(aes(x=DateTime_AEDT, y=pred2), col='blue')+scale_y_reverse()+labs(title =paste(i ,unique( mod_dat$class)))
   
