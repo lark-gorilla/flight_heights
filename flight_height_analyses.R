@@ -18,7 +18,7 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
 burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 
-dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT)
+dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT, tz="Australia/Sydney")
 dat<-dat%>%filter(deployed_ID!="predeployment")     
 
 table(dat$burstID, dat$class)
@@ -80,6 +80,33 @@ for (i in unique(dat$burstID))
 dat$pres_alt<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
 
+# Investigating 'A' class alighting/landing bursts
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
+scale_y_reverse()+facet_wrap(~burstID, scales="free")
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=temp, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=temp), size=1)+
+  facet_wrap(~burstID, scales="free")
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=pres_alt, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_alt), size=1)+facet_wrap(~burstID, scales="free")
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_boxplot(aes(y=wind_speed
+                   , x=burstID))
+
+# hmm not sure what the jumps in pressure are, even if we take top of 'sitting' pressure and bottom of flying pressure theres still a big gap
+
+# checking out how we differentiate sitting from flying based on pressure data alone
+
+ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
+  geom_point(aes(x=pres_pa, y=surface_air_pressure), col='red')+
+  geom_abline()+facet_wrap(~class, scales="free")
 
 
 # do overall distribution for flying birds
@@ -173,6 +200,21 @@ p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
 
 plot_gg(p1, height=3, width=8, pointcontract = 0.7)
 
+# showing altitude against GPS speed - not manually calculated speed!
+
+p2<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=speed))+scale_color_viridis()
+p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt))+scale_color_viridis()
+
+p1+p2
+
+p2<-ggplot(data=dat[dat$burstID=="08611854_06_146",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=speed))+scale_color_viridis()
+p1<-ggplot(data=dat[dat$burstID=="08611854_06_146",])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt))+scale_color_viridis()
+
+p1+p2
 # 3d plot to google earth
 
 temp1<-dat
@@ -225,3 +267,35 @@ temp1$tim_UTC<-ymd_hms(temp1$tim_UTC)
 sf3d<-temp1%>%st_as_sf(coords = c("X", "Y", "pres_alt"), crs = 4326, dim = "XYZ")
 
 st_write(sf3d, "C:/Users/mmil0049/Downloads/temp.kml")
+
+
+
+
+## have a look at cleasby gannet data
+
+gps1<-read.csv("sourced_data/Cleasby (2015) data doi_10.5061_dryad.1ds1q__v1/GPS/1446280_260611.csv", h=T)
+
+gps1$TIME<-dmy_hms(gps1$TIME)
+gps1$day<-day(gps1$TIME)
+gps1$hour<-hour(gps1$TIME)
+gps1$colD_class<-round((gps1$COL_DIST/10),0)
+
+ggplot(data=gps1)+geom_point(aes(x=TIME, y=COL_DIST, colour=STATUS1))
+
+ggplot(data=gps1%>%filter(day==26&STATUS1!='DIVE'&P<1025))+geom_line(aes(x=TIME, y=P, group=1))+
+  geom_point(aes(x=TIME, y=P, colour=STATUS1), size=1)
+
+ggplot(data=gps1%>%filter(day==26&STATUS1!='DIVE'&P<1025))+geom_line(aes(x=TIME, y=P, group=1))+
+  geom_point(aes(x=TIME, y=P, colour=STATUS1), size=1)+facet_wrap(~hour+colD_class, scales="free")
+
+# seems like pressure already in 1 sec GPS data
+gps1$key<-paste(gps1$day, gps1$hour,gps1$colD_class)
+
+for(i in unique(gps1$key))
+{
+  print(ggplot(data=gps1%>%filter(STATUS1!='DIVE'&P<1025&key==i))+geom_line(aes(x=TIME, y=P, group=1))+
+    geom_point(aes(x=TIME, y=P, colour=STATUS1), size=1.5)+scale_y_reverse()+labs(main=i))
+  readline("")
+}
+
+# ok looks interesting, there is some 'dynamic soaring' at low latitude but clear flapping to gain altitude. Few obvious waves while sitting
