@@ -187,12 +187,18 @@ tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1 & speed_diff>4)%
 #mean_s     sd_s
 #1 13.4574 4.1042
 
+#average FLYING speed - NOW USING GPS SPEED (knots conversion)
+tripdat%>%filter(tripID!="-1"& ColDist>1 & (speed/1.94384)>4)%>%
+  summarise(mean_s=mean(speed/1.94384), sd_s=sd(speed/1.94384))
+#mean_s     sd_s
+#1 13.37805 3.980755
+
 #plot non-island points 
 ggplot()+
-  geom_histogram(data=tripdat%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1),
-                 aes(x=speed_diff, fill=ifelse(speed_diff<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
-  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.46±4.1 m/s"), size=5)+
-  scale_x_continuous(breaks=0:40)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
+  geom_histogram(data=tripdat%>%filter(tripID!="-1" & ColDist>1),
+                 aes(x=speed/1.94384, fill=ifelse((speed/1.94384)<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
+  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.38±3.98 m/s"), size=5)+
+  scale_x_continuous(breaks=0:32)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
 
 tripdat$sit_fly<-"fly"
 tripdat[tripdat$speed_diff<4,]$sit_fly<-"sit"
