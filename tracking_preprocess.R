@@ -299,7 +299,7 @@ tripdat<-left_join(tripdat, burst_summary[c("burstID", "class")], by="burstID")
 
 #### Import ENV-data attributed from Movebank and join ####
 
-move_env<-read.csv("data/shy_albatross_island/ENV_data Movebank shy albatross 4-193975714928544020.csv")
+move_env<-read.csv("data/shy_albatross_island/shy albatross 4 v2-4056681552610937919.csv")
 tripdat<-read.csv("analyses/tripdat_4_movebank_all.csv", h=T)
 
 # ~300 less rows in movebank than tripdat so do join to work out
@@ -318,26 +318,25 @@ names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Sea.Level.Pressure"]<
 names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Surface.Air.Pressure"]<-"surface_air_pressure"
 names(tripdat_env)[names(tripdat_env)=="ETOPO1.Elevation"]<-"bathy"
 names(tripdat_env)[names(tripdat_env)=="NASA.Distance.to.Coast"]<-"dist2coast"
-names(tripdat_env)[names(tripdat_env)=="MODIS.Ocean.Aqua.OceanColor.4km.8d.Nighttime.SST"]<-"sst"
+names(tripdat_env)[names(tripdat_env)=="MODIS.Ocean.Aqua.OceanColor.4km.8d.Daytime.SST"]<-"sst"
 names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Wave.Direction"]<-"wave_direction"
 names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.10.Metre.Wind.Gust"]<-"windgust_10m"
-names(tripdat_env)[names(tripdat_env)=="  MODIS.Ocean.Aqua.OceanColor.4km.8d.Chlorophyll.A..OCI."]<-"chla"
+names(tripdat_env)[names(tripdat_env)=="MODIS.Ocean.Aqua.OceanColor.4km.8d.Chlorophyll.A..OCI."]<-"chla"
 names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Significant.Wave.Height"]<-"wave_height"
 names(tripdat_env)[names(tripdat_env)=="OSU.Ocean.NPP.0.083deg.8d.NPP"]<-"net_pp"
 names(tripdat_env)[names(tripdat_env)=="ECMWF.ERA5.SL.Mean.Wave.Period"]<-"wave_period"
 
 
 # convert wind u and v to speed and direction
-non_wind_NA<-which(!is.na(tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.))
 
-wind_df<-as.data.frame(uv2ds(tripdat_env[non_wind_NA,]$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
-                             tripdat_env[non_wind_NA,]$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.))
+wind_df<-as.data.frame(uv2ds(tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.,
+                             tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.))
 
-tripdat_env$wind_dir<-NA
-tripdat_env$wind_speed<-NA
+tripdat_env$wind_dir<-wind_df$dir
+tripdat_env$wind_speed<-wind_df$speed
 
-tripdat_env[non_wind_NA,]$wind_dir<-wind_df$dir
-tripdat_env[non_wind_NA,]$wind_speed<-wind_df$speed
+tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.<-NULL
+tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.<-NULL
 
 # combine with tracking and calc bird-wind bearing difference, then classify into tail, cross and head-wind
 
