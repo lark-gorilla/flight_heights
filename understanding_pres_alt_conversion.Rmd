@@ -17,9 +17,11 @@ When you click the **Knit** button a document will be generated that includes bo
 ```{r}
 library(ggplot2)
 library(dplyr)
+library(rayshader)
 library(patchwork)
 library(lubridate)
 library(viridis)
+library(sf)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -28,16 +30,14 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights
 dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
 burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 
-#attrib burst summary
-#dat<-left_join(dat, burst_summary[c("burstID", "class")], by="burstID")
-dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT)
+dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT, tz="Australia/Sydney")
 dat<-dat%>%filter(deployed_ID!="predeployment")     
 
 table(dat$burstID, dat$class)
 
 bad_ids<-c(
   "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
-  "08611854_01_35",  "08611854_01_41","08611854_01_42",  "08611854_01_46",  "08611854_01_47",
+  "08611854_01_35",  "08611854_01_41", "08611854_01_42", "08611854_01_46",  "08611854_01_47",
   "08611854_01_48",  "08611854_01_49",  "08611854_01_50",  "08611854_01_51",
   "08611854_01_52", "08611854_01_55", "08611854_01_65",  "-1_66",  "08611854_02_79",
   "08611854_02_82",  "08611854_02_85",  "08611854_02_86",  "08611854_02_87",
@@ -58,8 +58,51 @@ bad_ids<-c(
   "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
   "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
   "08611649_01_40",  "08611649_01_41", "08611649_01_17")
+
+length(unique(dat$burstID));length(bad_ids)
   
 dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
+
+## Few edits
+dat<-dat%>%filter(burstID!='08611854_01_66') # remove small 80 sec burst
+dat[dat$burstID=="08611649_01_36",]$class<-"A"
+dat%>%filter(burstID=="-1_93") # remove over the island bird
+dat[dat$burstID=="08611854_06_160",]$class<-"S"
+dat[dat$burstID=="08611854_01_59",]$class<-"A"
+dat[dat$burstID=="08611854_03_100",]$class<-"A"
+dat[dat$burstID=="08611854_06_156",]$class<-"A"
+
+# removing some small swamp sections
+dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-14 16:59:35", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
+#
+
+#### Detect loops #### https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data
+
+sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
+
+dat$loop=F
+
+for(i in unique(dat$burstID))
+{
+  track_dat <- dat[dat$burstID==i,]%>%
+  st_as_sf(coords = c("Longitude","Latitude"), crs = 4326)
+
+track_ls<-track_dat%>%st_combine() |> st_cast("LINESTRING")
+
+# could use this code to remove either v small or large loops track_poly_df <- 
+#track_polys |>  st_as_sf(crs = 4326) |> st_set_geometry("geometry") |> 
+#  mutate( size = st_area(geometry) ) |> arrange(desc(size)) 
+
+track_polys <- st_intersection(track_ls,track_ls) |>st_polygonize() |> st_cast() %>%st_union()
+
+int1<-st_intersects(track_dat, track_polys, sparse=F)
+
+if(!TRUE %in% int1){next} # if not loops skip to next
+
+dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
+}
+
 
 ## calc flight heights, do all but only ware about T and A burst classes
 
@@ -111,14 +154,16 @@ for (i in unique(dat$burstID))
                           ((k*(mod_dat$temp+273.15))/(m*g))*log(dat[dat$burstID==i,]$pres_pa/dat[dat$burstID==i,]$p0_orig)) # using p0_orig as p0
 
   p2<-ggplot(data=mod_dat)+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-    geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0_orig), col='red')+
+    geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=loop, shape=sit_fly), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0_orig), col='red')+
     geom_line(aes(x=DateTime_AEDT, y=pred), col='green')+
     geom_line(aes(x=DateTime_AEDT, y=pred2), col='blue')+scale_y_reverse()+labs(title =paste(i ,unique( mod_dat$class)))
   
   p3<-ggplot(data=dat[dat$burstID==i,])+geom_path(aes(x=Longitude, y=Latitude, group=1))+
-    geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt, shape=sit_fly))+scale_color_viridis_b()
+    geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt, shape=sit_fly))+scale_color_viridis()
             
-  print(p2/p3)
+  print(p2)
+  print(p3)
+  
   print(i)
   print(burst_summary%>%filter(burstID==i))
    
