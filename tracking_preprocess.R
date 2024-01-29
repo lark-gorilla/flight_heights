@@ -336,7 +336,7 @@ tripdat_env$wind_dir<-wind_df$dir
 tripdat_env$wind_speed<-wind_df$speed
 
 tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.<-NULL
-tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.V.Component.<-NULL
+tripdat_env$ECMWF.ERA5.SL.Wind..10.m.above.Ground.U.Component.<-NULL
 
 # combine with tracking and calc bird-wind bearing difference, then classify into tail, cross and head-wind
 
@@ -350,4 +350,59 @@ tripdat_env$b_w_class<-cut(tripdat_env$b_w_diff, breaks=c(0, 45, 135, 180), labe
 
 
 #write.csv(tripdat_env, "analyses/tripdat_4_analyses_all.csv", quote=F, row.names=F)
+
+## read back in and add MSLA data
+library(terra)
+library(ncdf4)
+setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
+dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
+dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT, tz="Australia/Sydney")
+
+nc_open("sourced_data/IMOS_aggregation_20240129T043941Z/IMOS_aggregation_20240129T043941Z.nc") #see what we're dealing with
+#units: days since 1985-01-01 00:00:00 UTC
+
+msla<-terra::rast("sourced_data/IMOS_aggregation_20240129T043941Z/IMOS_aggregation_20240129T043941Z.nc")
+
+#get SLA product
+msla<-msla["GSLA"]
+
+days(as.double(gsub( "GSLA_TIME=", "", names(msla))))
+
+sat_dat_ref<-with_tz(hours(as.numeric(gsub( "GSLA_TIME=", "", names(msla)))*24) + ymd_hms('1985-01-01 00:00:00', tz="UTC"), "Australia/Sydney")
+
+df_tere_topo <- subset(msla, 1) %>%
+  as.data.frame(xy = TRUE) %>%
+  rename(msla = 'GSLA_TIME=13969.25')
+
+dat_sf<-st_as_sf(dat, coords=c("Longitude", "Latitude"), crs=4326)
+
+ggplot()+
+  geom_raster(data = df_tere_topo, aes(x = x, y = y, fill = `msla`))+
+  geom_sf(dat_sf, mapping = aes(), color = 'red', fill = NA)
+
+# do extract
+
+dat$msla=-999
+dat$key<-paste(day(dat$DateTime_AEDT), month(dat$DateTime_AEDT))
+for( i in unique(dat$key))
+{
+  ext1<-subset(msla, which(i==paste(day(sat_dat_ref), month(sat_dat_ref))))
+  
+  dat[dat$key==i,]$msla<-extract(ext1, dat[dat$key==i,c('Longitude', 'Latitude')])[,2]
+}
+# filling few NA bursts with nearst MSLA value  
+table(dat[is.na(dat$msla),]$burstID)
+dat[dat$burstID=='08611649_01_31',]$msla<-0.1644973
+dat[dat$burstID=='08611649_01_16',]$msla<-mean(dat[dat$burstID=='08611649_01_15',]$msla)
+dat[dat$burstID=='08611649_01_39',]$msla<-mean(dat[dat$burstID=='08611649_01_40',]$msla)
+
+dat$key<-NULL
+
+#citation: The citation in a list of references is: "IMOS [year-of-data-download], [Title], [data-access-URL], accessed [date-of-access]."
+
+# could belnd with tidal data from jetty
+# http://www.bom.gov.au/oceanography/projects/abslmp/data/data.shtml
+
+#write.csv(dat, "analyses/tripdat_4_analyses_all.csv", quote=F, row.names=F)
+
 
