@@ -46,10 +46,63 @@ bad_ids<-c(
   "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
   "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
   "08611649_01_40",  "08611649_01_41", "08611649_01_17")
+
+length(unique(dat$burstID));length(bad_ids)
   
 dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
 
-## calc flight heights, do all but only ware about T and A burst classes
+## Few edits
+dat<-dat%>%filter(burstID!='08611854_01_66') # remove small 80 sec burst
+dat[dat$burstID=="08611649_01_36",]$class<-"A"
+dat%>%filter(burstID=="-1_93") # remove over the island bird
+dat[dat$burstID=="08611854_06_160",]$class<-"S"
+dat[dat$burstID=="08611854_01_59",]$class<-"A"
+dat[dat$burstID=="08611854_03_100",]$class<-"A"
+dat[dat$burstID=="08611854_06_156",]$class<-"A"
+
+# removing some small swamp sections
+dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-14 16:59:35", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
+#
+
+#### Detect loops #### https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data
+
+sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
+
+dat$loop=F
+
+for(i in unique(dat$burstID))
+{
+  track_dat <- dat[dat$burstID==i,]%>%
+  st_as_sf(coords = c("Longitude","Latitude"), crs = 4326)
+
+track_ls<-track_dat%>%st_combine() |> st_cast("LINESTRING")
+
+# could use this code to remove either v small or large loops track_poly_df <- 
+#track_polys |>  st_as_sf(crs = 4326) |> st_set_geometry("geometry") |> 
+#  mutate( size = st_area(geometry) ) |> arrange(desc(size)) 
+
+track_polys <- st_intersection(track_ls,track_ls) |>st_polygonize() |> st_cast() %>%st_union()
+
+int1<-st_intersects(track_dat, track_polys, sparse=F)
+
+if(!TRUE %in% int1){next} # if not loops skip to next
+
+dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
+}
+
+# finally set all sitting points that might be looped over as not in the loop
+
+#ggplot()+geom_sf(data=track_polys, fill='red')+geom_sf(data=track_ls)+geom_sf(data=track_dat[unlist(int1),], col='green', aes(shape=sit_fly))
+
+#### ^^ ####
+
+
+
+
+##
+
+#### Calculation of flight height using dynamic soaring method ####
 
 # barometric formula (Berberan Santos et al. 1997)
 #h=((k*T)/(m*g))*ln(p/p0)
@@ -63,29 +116,76 @@ g=9.80665
 # max pressure point of each osscillation (after a short window smooth to remove error),
 # and then take the mean of these points, you could even run a gam through these if we
 # expect local pressure changes to change over the burst - possible on transiting bursts.
-# Question we need answered if if birds always meet the surface during their soaring oscillation
+# Question we need answered if birds always meet the surface during their soaring oscillation
 # Anchoring each oscillaition to the sea surface removes negative values but probably 
 # overestimates.. hmm also look at a small moving window to clean up 
 
 dat$index<-1:nrow(dat)
 dat$p0<-0
 
-dat$pres_alt<-NA
+dat$alt_DS<-NA
 for (i in unique(dat$burstID))
 {
-  # original method - 95% upper qunatile of pressure to set p0 for entire burst
+  # original method - 95% upper quantile of pressure to set p0 for entire burst
   dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
 }
   
-dat$pres_alt<-(-1*  # *-1 flips negative/positive values
+dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
+#### ^^^ ####
 
-# Investigating 'A' class alighting/landing bursts
+#### Calculation of flight height using satellite ocean data (Johnston et al 2023) ####
 
-ggplot(data=dat[dat$class=="A",])+
+# Work out difference between pressure of sitting bursts and ECMWF.ERA5.SL.Mean.Sea.Level.Pressure
+# then use value to calibrate satellite data to 'true' surface pressure (p0). Apply 'true'
+# p0 value sitting bursts to flying bursts within 1 day. Nearest (in time) sitting burst has priority
+
+# analysis run per logger as each will have unique sensor calibration
+
+
+ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
+  geom_abline()+facet_wrap(~class, scales="free")
+
+ggplot(data=dat%>%filter(class=="S")%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa), col='red')+
+  facet_wrap(~ID, scales="free")
+
+# check each individually
+p1<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+p2<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+
+p1/p2
+
+p1<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+p2<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+
+p1/p2
+
+p1<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+p2<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+
+p1/p2
+
+# Ok use sitting points 
+
+#### Investigating 'A' class alighting/landing bursts ####
+
+p1<-ggplot(data=dat[dat$class=="A",])+
   geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
-scale_y_reverse()+facet_wrap(~burstID, scales="free")
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
+  scale_y_reverse()+facet_wrap(~burstID, scales="free")
+
+p2<-ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=alt, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt), size=1)+facet_wrap(~burstID, scales="free")
+
+p1/p2
 
 ggplot(data=dat[dat$class=="A",])+
   geom_line(aes(x=DateTime_AEDT, y=temp, group=1))+
@@ -93,22 +193,34 @@ ggplot(data=dat[dat$class=="A",])+
   facet_wrap(~burstID, scales="free")
 
 ggplot(data=dat[dat$class=="A",])+
-  geom_line(aes(x=DateTime_AEDT, y=pres_alt, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_alt), size=1)+facet_wrap(~burstID, scales="free")
+  geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=wave_height), size=1)+
+  facet_wrap(~burstID, scales="free")+scale_colour_viridis() # high waves can look like DS - remember bird speed!
 
-ggplot(data=dat[dat$class=="A",])+
-  geom_boxplot(aes(y=wind_speed
-                   , x=burstID))
+#### ^^ ####
 
-# hmm not sure what the jumps in pressure are, even if we take top of 'sitting' pressure and bottom of flying pressure theres still a big gap
+#### WAVE HEIGHT Does wave height correlate with pres_DS - ie can the dynamic soaring pressure method be applied to wave heights? ####
 
-# checking out how we differentiate sitting from flying based on pressure data alone
+ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=wave_height))+geom_line(aes(x=DateTime_AEDT, y=pres_pa))+facet_wrap(~burstID, scales="free")+scale_colour_viridis()
 
-ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
-  geom_point(aes(x=pres_pa, y=surface_air_pressure), col='red')+
-  geom_abline()+facet_wrap(~class, scales="free")
+# ok nice, so does variance increase with wave_height
+# very rough calc, need to tweak variance/mean etc for some dodgy bursts
+# Significant wave height can be shown to correspond to the average wave height of the top one-third highest waves
+wave_sum<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(p_var=var(pres_pa), w_height=mean(wave_height), 
+                                                                   pres_h_0.66=quantile(alt_DS, probs=0.66)) # could do 0.6 as we already take 95% percentile
 
+ggplot(data=wave_sum)+
+  geom_point(aes(x=w_height, y=p_var)) # looks like it
 
+ggplot(data=wave_sum)+
+  geom_point(aes(x=w_height, y=pres_h_0.66))
+cor.test(x=wave_sum$w_height, y=wave_sum$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
+
+#### ^^ ####
+
+ggplot(data=dat)+geom_point(aes(x=DateTime_AEDT, y=alt, colour=class))+
+  facet_wrap(~ID, scales="free", nrow=3)
 # do overall distribution for flying birds
 
 mean(dat%>%filter(class %in% c("T", "L") & sit_fly=="fly")%>%pull(pres_alt), na.rm=T)
@@ -135,9 +247,9 @@ nrow(tl_dat[tl_dat$pres_alt<30,])/nrow(tl_dat)
 nrow(tl_dat[tl_dat$pres_alt<10,])/nrow(tl_dat)
 nrow(tl_dat[tl_dat$pres_alt<5,])/nrow(tl_dat)
 
-# write out kmz of bird that crosses the island
-sf3d<-dat%>%filter(burstID=="-1_93")%>%st_as_sf(coords = c("Longitude", "Latitude", "pres_alt"), crs = 4326, dim = "XYZ")
-st_write(sf3d, "analyses/GIS/over_the_island_burst.kml")
+# write out kmz of bird that crosses the island - removed prior to analyes now
+#sf3d<-dat%>%filter(burstID=="-1_93")%>%st_as_sf(coords = c("Longitude", "Latitude", "pres_alt"), crs = 4326, dim = "XYZ")
+#st_write(sf3d, "analyses/GIS/over_the_island_burst.kml")
 
 # test GPS difference
 
@@ -191,7 +303,7 @@ p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
   geom_point(aes(x=Longitude, y=Latitude, colour=pres_alt))+scale_color_viridis()+
   labs(x="Longitude", y="Latitude", colour="   Altitude (m)")
 
-plot_gg(p1, height=3, width=8, pointcontract = 0.7)
+p4<-render_snapshot(plot_gg(p1, height=3, width=8, pointcontract = 0.7))
 
 #comparison with GPS
 p1<-ggplot(data=dat[dat$burstID=="41490936_01_24",])+
