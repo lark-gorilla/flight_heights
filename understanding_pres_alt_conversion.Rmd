@@ -164,6 +164,11 @@ for (i in unique(dat$burstID))
   print(p2)
   print(p3)
   
+  p1<-ggplot(data=dat[dat$burstID==i,])+
+  geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
+  labs(x="Longitude", y="Latitude", colour="   pressure")
+  {plot_gg(p1, height=4, width=8, pointcontract = 0.7);render_camera(theta = 10, phi = 70);render_snapshot()}
+  
   print(i)
   print(burst_summary%>%filter(burstID==i))
    
