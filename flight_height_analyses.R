@@ -54,7 +54,7 @@ dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max
 ## Few edits
 dat<-dat%>%filter(burstID!='08611854_01_66') # remove small 80 sec burst
 dat[dat$burstID=="08611649_01_36",]$class<-"A"
-dat%>%filter(burstID=="-1_93") # remove over the island bird
+dat<-dat%>%filter(burstID!="-1_93") # remove over the island bird
 dat[dat$burstID=="08611854_06_160",]$class<-"S"
 dat[dat$burstID=="08611854_01_59",]$class<-"A"
 dat[dat$burstID=="08611854_03_100",]$class<-"A"
@@ -96,11 +96,6 @@ dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
 #ggplot()+geom_sf(data=track_polys, fill='red')+geom_sf(data=track_ls)+geom_sf(data=track_dat[unlist(int1),], col='green', aes(shape=sit_fly))
 
 #### ^^ ####
-
-
-
-
-##
 
 #### Calculation of flight height using dynamic soaring method ####
 
@@ -173,6 +168,43 @@ p2<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_po
 p1/p2
 
 # Ok use sitting points 
+
+#get sitting pressure diff 
+dat$sat_sit_pdiff<-NA
+dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sat_sit_pdiff<-
+ (dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$pres_pa-
+      dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$mean_sea_level_pressure) 
+
+# summarise per burst
+dat<-dat%>%group_by(burstID)%>%
+  mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T))%>%ungroup()%>%as.data.frame()
+
+dat$nearest_sat_sit_pdiff<-NA
+for(i in unique(dat$burstID))
+{
+  dtemp<-dat%>%filter(burstID==i)
+  IDtemp<-dat%>%filter(ID==unique(dtemp$ID)) # get nearest from same logger
+  sit_burst<-IDtemp[! is.na(IDtemp$burstID_sat_sit_pdiff),] # only bursts with sitting diffs
+  if(min(abs((sit_burst$DateTime_AEDT- 
+               median(dtemp$DateTime_AEDT))))>hours(24)){next} #if no sitting within 1 day skip
+  
+ appl_diff<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sat_sit_pdiff
+ dat[dat$burstID==i,]$nearest_sat_sit_pdiff<-appl_diff
+}
+
+# check outputs - reproduce Johnston fig 2
+ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_line(aes(x=index, y=pres_pa), colour='black')+
+  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
+
+ggplot(data=dat%>%filter(ID==8611854)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_line(aes(x=index, y=pres_pa), colour='black')+
+  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
+
+ggplot(data=dat%>%filter(ID==41490936)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
+  geom_line(aes(x=index, y=pres_pa), colour='black')+
+  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
+# looks good
 
 #### Investigating 'A' class alighting/landing bursts ####
 
