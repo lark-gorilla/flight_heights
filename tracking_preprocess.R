@@ -366,8 +366,6 @@ msla<-terra::rast("sourced_data/IMOS_aggregation_20240129T043941Z/IMOS_aggregati
 #get SLA product
 msla<-msla["GSLA"]
 
-days(as.double(gsub( "GSLA_TIME=", "", names(msla))))
-
 sat_dat_ref<-with_tz(hours(as.numeric(gsub( "GSLA_TIME=", "", names(msla)))*24) + ymd_hms('1985-01-01 00:00:00', tz="UTC"), "Australia/Sydney")
 
 df_tere_topo <- subset(msla, 1) %>%
