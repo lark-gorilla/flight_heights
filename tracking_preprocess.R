@@ -459,6 +459,8 @@ d1[d1$ID=='08611854',]$ID<-'8611854'
 d1%>%group_by(ID)%>%summarise(n=n(), med_d=median(alt_diff), mn_d=mean(alt_diff))
 summary(d1$alt_diff)
 
+summary(d1$alt_diff-9) #brings difference to within 0.3m of DEM values for island
+
 # difference sitting on water per device
 processed_all_dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
 processed_all_dat$DateTime_AEDT<-ymd_hms(processed_all_dat$DateTime_AEDT, tz="Australia/Sydney")
@@ -479,4 +481,4 @@ ggplot(data=processed_all_dat%>%filter(class=='S' & alt<200))+
   geom_vline(xintercept=9, col='green')
 
 ggplot(data=processed_all_dat%>%filter(alt<200))+
-  geom_density(aes(x=alt-9, colour=class))
+  geom_density(aes(x=alt-9, colour=class)) # ok -9 is the offset
