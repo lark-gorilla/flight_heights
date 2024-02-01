@@ -175,11 +175,15 @@ dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sat_sit_pdiff<-
  (dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$pres_pa-
       dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$mean_sea_level_pressure) 
 
+dat$sit_alt<-NA
+dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sit_alt<-dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$alt
+
 # summarise per burst
 dat<-dat%>%group_by(burstID)%>%
-  mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T))%>%ungroup()%>%as.data.frame()
+  mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T), burstID_sit_alt=median(sit_alt, na.rm=T))%>%ungroup()%>%as.data.frame()
 
 dat$nearest_sat_sit_pdiff<-NA
+dat$nearest_sit_alt<-NA
 for(i in unique(dat$burstID))
 {
   dtemp<-dat%>%filter(burstID==i)
@@ -189,7 +193,10 @@ for(i in unique(dat$burstID))
                median(dtemp$DateTime_AEDT))))>hours(24)){next} #if no sitting within 1 day skip
   
  appl_diff<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sat_sit_pdiff
+ appl_sit_alt<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sit_alt
+ 
  dat[dat$burstID==i,]$nearest_sat_sit_pdiff<-appl_diff
+ dat[dat$burstID==i,]$nearest_sit_alt<-appl_sit_alt
 }
 
 # check outputs - reproduce Johnston fig 2
@@ -205,7 +212,24 @@ ggplot(data=dat%>%filter(ID==41490936)%>%mutate(index=1:nrow(.)))+geom_line(aes(
   geom_line(aes(x=index, y=pres_pa), colour='black')+
   geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
 # looks good
+#calculate p0 and alt for satellite ocean data method
+dat$p0_SO<-ifelse(is.na(dat$sat_sit_pdiff),dat$mean_sea_level_pressure+dat$nearest_sat_sit_pdiff,dat$mean_sea_level_pressure+dat$sat_sit_pdiff)
+dat$alt_SO<-(-1*  # *-1 flips negative/positive values
+               ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_SO))
 
+ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=alt), col="green")+
+  geom_line(aes(x=index, y=alt_DS), colour='black')+
+  geom_line(aes(x=index, y=alt_SO), colour='orange')
+
+
+## !Need to add tidal offset to correct to MSL. But minimal tides in this area
+
+sit_expl<-dat%>%filter(class=='S')%>%group_by(burstID)%>%
+  summarise(nsat=mean(nSats), datetime=median(DateTime_AEDT), hdop=mean(hdop), vdop=mean(vdop), long=median(Longitude),
+             pdop=mean(pdop), alt_med=median(sit_alt, na.rm=T), alt_mn=mean(sit_alt, na.rm=T))
+
+ggplot(data=sit_expl%>%filter(alt_med<1000))+geom_point(aes(x=datetime, y=alt_med, colour=long))+
+  facet_wrap(~substr(burstID, 1, 7), scales='free')
 #### Investigating 'A' class alighting/landing bursts ####
 
 p1<-ggplot(data=dat[dat$class=="A",])+
