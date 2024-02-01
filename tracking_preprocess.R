@@ -46,6 +46,7 @@ dat[dat$DateTime_AEDT<ymd_hms("23-09-29 03:10:00", tz="Australia/Sydney") & dat$
 
 # convert to spatial
 dat_sf<-st_as_sf(dat, coords=c("lon", "lat"), crs=4326)
+#st_write(dat_sf, "analyses/GIS/alldat_almost_raw.shp")
 #view in tmap
 tmap_mode("view")
 tm_shape(dat_sf)+tm_dots(col="deployed_ID")+tm_mouse_coordinates()
@@ -403,4 +404,79 @@ dat$key<-NULL
 
 #write.csv(dat, "analyses/tripdat_4_analyses_all.csv", quote=F, row.names=F)
 
+## look into GPS bias - use all bursts before we remove some
 
+#combine predeployment data with newer stuff
+
+dat<-rbind(data.frame(read.csv("data/shy_albatross_island/gps_89460800120108611854.csv"), ID="08611854"),
+           data.frame(read.csv("data/shy_albatross_island/gps_89460800120141490936.csv"), ID="41490936"),
+           data.frame(read.csv("data/shy_albatross_island/gps_89460800120108611649.csv"), ID="08611649"))
+
+dat<-dat[-80141,] # fix
+
+dat$DateTime_UTC<-ymd_hms(dat$time_UTC, tz="UTC")
+dat$DateTime_AEDT<-with_tz(dat$DateTime_UTC, "Australia/Sydney")
+
+dat<-dat[dat$lat<0,]
+
+dat$deployed_ID<-as.character(dat$ID)
+dat[dat$DateTime_AEDT<ymd_hms("23-04-01 17:12:00", tz="Australia/Sydney") & dat$ID== "08611854",]$deployed_ID<-"predeployment"
+dat[dat$DateTime_AEDT<ymd_hms("23-04-01 17:59:00", tz="Australia/Sydney") & dat$ID== "41490936",]$deployed_ID<-"predeployment"
+dat[dat$DateTime_AEDT<ymd_hms("23-09-29 03:10:00", tz="Australia/Sydney") & dat$ID== "08611649",]$deployed_ID<-"predeployment"
+
+pd_dat<-dat%>%filter(deployed_ID=='predeployment')
+
+processed_dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
+processed_dat$DateTime_AEDT<-ymd_hms(processed_dat$DateTime_AEDT, tz="Australia/Sydney")
+processed_dat<-processed_dat%>%filter(class=='C')
+
+ai_dem<-terra::rast("sourced_data/Albatross_is_DEM/TAS Government/DEM/2 Metre/Tasmania_Statewide_2m_DEM_14-08-2021.tif")
+
+dat_sf<-processed_dat%>%st_as_sf(coords=c("Longitude", "Latitude"), crs=4326)%>%
+  st_transform(st_crs(ai_dem))
+processed_dat$island_dem<-(extract(ai_dem, dat_sf))[,2]
+
+dat_sf<-pd_dat%>%st_as_sf(coords=c("lon", "lat"), crs=4326)%>%
+  st_transform(st_crs(ai_dem))
+pd_dat$island_dem<-(extract(ai_dem, dat_sf))[,2]
+
+ggplot()+
+  geom_raster(data = ai_dem %>% as.data.frame(xy = TRUE)%>%rename( alt='Tasmania_Statewide_2m_DEM_14-08-2021'),
+              aes(x = x, y = y, fill = `alt`))+
+  geom_point(data=processed_dat%>%filter(!is.na(island_dem)), aes(x=Longitude, y=Latitude), shape=1)+
+  geom_point(data=pd_dat%>%filter(!is.na(island_dem)), aes(x=lon, y=lat), shape=1, col='red')
+
+d1<-rbind(pd_dat%>%filter(!is.na(island_dem))%>%dplyr::select(ID, alt, island_dem, vdop, hdop, nSats),
+          processed_dat%>%filter(!is.na(island_dem))%>%dplyr::select(ID, alt, island_dem, vdop, hdop, nSats))
+
+ggplot(data=d1)+geom_point(aes(x=island_dem, y=alt, colour=ID))
+
+d1$alt_diff=d1$alt-d1$island_dem
+
+# difference on colony per device
+d1[d1$ID=='08611649',]$ID<-'8611649'
+d1[d1$ID=='08611854',]$ID<-'8611854'
+d1%>%group_by(ID)%>%summarise(n=n(), med_d=median(alt_diff), mn_d=mean(alt_diff))
+summary(d1$alt_diff)
+
+# difference sitting on water per device
+processed_all_dat<-read.csv("analyses/tripdat_4_analyses_all.csv", h=T)
+processed_all_dat$DateTime_AEDT<-ymd_hms(processed_all_dat$DateTime_AEDT, tz="Australia/Sydney")
+processed_all_dat%>%filter(class=='S' & sit_fly=='sit')%>%
+  group_by(ID)%>%summarise(n=n(), med_d=median(alt), mn_d=mean(alt))
+summary(processed_all_dat%>%filter(class=='S' & sit_fly=='sit')%>%pull(alt))
+
+ggplot(data=processed_all_dat%>%filter(class=='S' & alt<200))+
+  geom_histogram(aes(x=alt), binwidth=1)+facet_wrap(~ID, scales='free')+
+  geom_vline(xintercept=7, col='red')+
+  geom_vline(xintercept=8, col='blue')+
+  geom_vline(xintercept=9, col='green')
+
+ggplot(data=processed_all_dat%>%filter(class=='S' & alt<200))+
+  geom_histogram(aes(x=alt), binwidth=1)+
+  geom_vline(xintercept=7, col='red')+
+  geom_vline(xintercept=8, col='blue')+
+  geom_vline(xintercept=9, col='green')
+
+ggplot(data=processed_all_dat%>%filter(alt<200))+
+  geom_density(aes(x=alt-9, colour=class))
