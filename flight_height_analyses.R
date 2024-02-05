@@ -1,8 +1,5 @@
 # Code to conduct paper analyses.
 
-# note: remove first and/or last point of each burst?
-
-
 library(ggplot2)
 library(dplyr)
 library(rayshader)
@@ -10,6 +7,10 @@ library(patchwork)
 library(lubridate)
 library(viridis)
 library(sf)
+library(lme4)
+library(car)
+library(emmeans)
+library(performance)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -59,7 +60,9 @@ dat[dat$burstID=="08611854_06_160",]$class<-"S"
 dat[dat$burstID=="08611854_01_59",]$class<-"A"
 dat[dat$burstID=="08611854_03_100",]$class<-"A"
 dat[dat$burstID=="08611854_06_156",]$class<-"A"
-
+#summary(fitted(lm(alt~vdop, data=dat%>%filter(class=='S'&alt<200))))
+dat<-dat%>%filter(!burstID %in%
+c('08611854_02_73', '08611854_04_121', '08611854_06_155')) # remove 3 bursts with crazy GPS alt
 # removing some small swamp sections
 dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-14 16:59:35", tz="Australia/Sydney")))
 dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
@@ -175,15 +178,11 @@ dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sat_sit_pdiff<-
  (dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$pres_pa-
       dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$mean_sea_level_pressure) 
 
-dat$sit_alt<-NA
-dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sit_alt<-dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$alt
-
 # summarise per burst
 dat<-dat%>%group_by(burstID)%>%
-  mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T), burstID_sit_alt=median(sit_alt, na.rm=T))%>%ungroup()%>%as.data.frame()
+  mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T))%>%ungroup()%>%as.data.frame()
 
 dat$nearest_sat_sit_pdiff<-NA
-dat$nearest_sit_alt<-NA
 for(i in unique(dat$burstID))
 {
   dtemp<-dat%>%filter(burstID==i)
@@ -193,10 +192,8 @@ for(i in unique(dat$burstID))
                median(dtemp$DateTime_AEDT))))>hours(24)){next} #if no sitting within 1 day skip
   
  appl_diff<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sat_sit_pdiff
- appl_sit_alt<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sit_alt
- 
+
  dat[dat$burstID==i,]$nearest_sat_sit_pdiff<-appl_diff
- dat[dat$burstID==i,]$nearest_sit_alt<-appl_sit_alt
 }
 
 # check outputs - reproduce Johnston fig 2
@@ -212,24 +209,60 @@ ggplot(data=dat%>%filter(ID==41490936)%>%mutate(index=1:nrow(.)))+geom_line(aes(
   geom_line(aes(x=index, y=pres_pa), colour='black')+
   geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
 # looks good
+
 #calculate p0 and alt for satellite ocean data method
 dat$p0_SO<-ifelse(is.na(dat$sat_sit_pdiff),dat$mean_sea_level_pressure+dat$nearest_sat_sit_pdiff,dat$mean_sea_level_pressure+dat$sat_sit_pdiff)
 dat$alt_SO<-(-1*  # *-1 flips negative/positive values
                ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_SO))
 
-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=alt), col="green")+
+#Add -9m correction to GPS elevation
+dat$alt_gps<-dat$alt-9
+
+ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
-  geom_line(aes(x=index, y=alt_SO), colour='orange')
+  geom_line(aes(x=index, y=alt_SO), colour='orange', alpha=0.5)+
+  geom_line(aes(x=index, y=alt_gps), col="green", alpha=0.5)+
+  facet_wrap(~ID, nrow=3, scales='free') # ok looks good
+
+#remove first GPS fix of each burst as higher error
+dat<-dat %>% group_by(burstID) %>%
+  filter(row_number()!=1)%>%ungroup()%>%as.data.frame()
+
+# compare differences between three methods
+
+# format dataset for comparison # not added 1000 to all alts to make positive for Gamma
+
+dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
+
+dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
+                data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
+                data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
+
+#m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
+#initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
+
+m1_altD<-lmer(Altitude~method+(1|burstID:Logger), data=dat_comp) # need to formulate with nlme
+
+m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_comp)
+#resid_panel(m1)
+summary(m1)
+
+em1<-emmeans(m1, specs='method')
+pairs(em1)
+plot(em1, comparisons = TRUE)
 
 
-## !Need to add tidal offset to correct to MSL. But minimal tides in this area
+anova(m1_altD)
 
-sit_expl<-dat%>%filter(class=='S')%>%group_by(burstID)%>%
-  summarise(nsat=mean(nSats), datetime=median(DateTime_AEDT), hdop=mean(hdop), vdop=mean(vdop), long=median(Longitude),
-             pdop=mean(pdop), alt_med=median(sit_alt, na.rm=T), alt_mn=mean(sit_alt, na.rm=T))
+rg1<-ref_grid(m1_altD, specs='method')
+emmeans(rg1, specs='method')
+contrast(rg1, method='pairwise')
 
-ggplot(data=sit_expl%>%filter(alt_med<1000))+geom_point(aes(x=datetime, y=alt_med, colour=long))+
-  facet_wrap(~substr(burstID, 1, 7), scales='free')
+# model diags
+check_model(m1)
+
+
+
 #### Investigating 'A' class alighting/landing bursts ####
 
 p1<-ggplot(data=dat[dat$class=="A",])+
