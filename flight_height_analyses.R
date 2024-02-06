@@ -236,7 +236,8 @@ p1<-ggplot(data=fig_dat)+
   geom_point(aes(x=index2, y=alt_gps), col="green", alpha=0.5, size=0.5)+
   geom_point(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, size=0.5)+
   scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25))+labs(y='Altitude (m)', x='5 minute burst index')+
-  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i))+theme_bw()
+  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i))+
+  theme_bw()+ theme( axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_hline(aes(yintercept=8), linetype='dotted')+
@@ -247,7 +248,8 @@ geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
   sec.axis = sec_axis(~.-8, name="Dynamic soaring calibrated altitude (m)",
 breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
-theme_bw() + theme(legend.position= c(0.9,0.9))+scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
+theme_bw() + theme(legend.position= c(0.8,0.8), axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
                                                                                                                                                                                    +  breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")})) +scale_x_datetime(date_breaks = "1 min", labels= %H:%M, name='Burst time')
 
 #remove first GPS fix of each burst as higher error
@@ -340,26 +342,44 @@ cor.test(x=wave_sum$w_height, y=wave_sum$pres_h_0.66, method='pearson', na.actio
 w1<-lm(w_height~pres_h_0.66, data=wave_sum)
 w2<-lm(log(w_height)~pres_h_0.66, data=wave_sum)
 w3<-lm(w_height~sqrt(pres_h_0.66), data=wave_sum)
+w4<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$w_height<3 & wave_sum$pres_h_0.66<8,])
+w5<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$pres_h_0.66<5,])
 
 check_model(w1)
 check_model(w2)
 check_model(w3)
+check_model(w4)
+check_model(w5)
 
-AIC(w1, w2, w3)
+AIC(w1, w2, w3, w4, w5)
 
 anova(w1)
 anova(w2)
-anova(w3) # thats the one
+anova(w3) 
+anova(w4) # thats the one
+anova(w5) # thats the one
 
-new_d<-data.frame(pres_h_0.66=sqrt(seq(0, 10, 0.2)), pres_h_0.66_unT=seq(0, 10, 0.2))
-new_d<-cbind(new_d, predict(w3, new_d, se.fit = T)[c('fit', 'se.fit')])
+summary(w5)
+
+new_d<-data.frame(pres_h_0.66=seq(0, 10, 0.2))
+new_d<-cbind(new_d, predict(w5, new_d, se.fit = T)[c('fit', 'se.fit')])
 new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
 new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
 
-ggplot(data=wave_sum)+
-  geom_point(aes(y=w_height, x=pres_h_0.66))+
-  geom_line(data=new_d, aes(x=pres_h_0.66_unT, y=fit),colour='red')+
-  geom_ribbon(data=new_d, aes(x=pres_h_0.66_unT, ymin=lci, ymax=uci), alpha=0.5, colour='red')
+p3<-ggplot()+
+  geom_point(data=wave_sum, aes(y=w_height, x=pres_h_0.66))+
+  geom_line(data=new_d, aes(x=pres_h_0.66, y=fit),colour='red', linewidth=1)+
+  geom_ribbon(data=new_d, aes(x=pres_h_0.66, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
+  theme_bw()+
+  scale_x_continuous(limits=c(0, 4), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0, 4), expand = c(0,0))+
+  labs(x='Significant wave height from albatross altimeters (m)',y='Significant wave height from satellite (m)', size=5)+
+  geom_text(aes(x=2, y=0.5), label=expression("Y = 0.149 * X + 1.55 (F=9.79"["1,34"]*", "* italic(p) < 0.001* ")"), size=4)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+# Make mega plot!!
+
+areas <- c(area(1, 1, 1, 3),area(2, 2, 2, 3), area(2, 1, 2,1))
+p1 + p2 + p3 + plot_layout(design = areas)
 
 #### ^^ ####
 
