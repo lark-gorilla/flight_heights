@@ -7,8 +7,7 @@ library(patchwork)
 library(lubridate)
 library(viridis)
 library(sf)
-library(lme4)
-library(car)
+library(nlme)
 library(emmeans)
 library(performance)
 
@@ -220,9 +219,36 @@ dat$alt_gps<-dat$alt-9
 
 ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
+  geom_line(aes(x=index, y=alt_gps), colour="green", alpha=0.5)+
   geom_line(aes(x=index, y=alt_SO), colour='orange', alpha=0.5)+
-  geom_line(aes(x=index, y=alt_gps), col="green", alpha=0.5)+
-  facet_wrap(~ID, nrow=3, scales='free') # ok looks good
+  facet_wrap(~ID, nrow=3, scales='free')+labs(y='Altitude (m)', x='Index') # ok looks good
+
+# make fig
+fig_dat<-dat%>%filter(ID==41490936)%>%mutate(index2=1:n())%>%filter(index2<5109)
+p1<-ggplot(data=fig_dat)+
+  geom_rect(data=fig_dat%>%filter(class=='S')%>%group_by(burstID)%>%
+              summarise(xmin=min(index2), xmax=max(index2)),
+            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='grey', alpha=0.5)+
+  geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_gps), col="green", alpha=0.5, linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, linewidth=0.1)+
+  geom_point(aes(x=index2, y=alt_DS), colour='black', size=0.5)+
+  geom_point(aes(x=index2, y=alt_gps), col="green", alpha=0.5, size=0.5)+
+  geom_point(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, size=0.5)+
+  scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25))+labs(y='Altitude (m)', x='5 minute burst index')+
+  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i))+theme_bw()
+
+p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
+  geom_hline(aes(yintercept=8), linetype='dotted')+
+  geom_hline(aes(yintercept=0), linetype='dotted')+
+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
+geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
+  scale_y_continuous(name='Ocean satellite date calibrated altitude (m)', breaks=seq(0, 20, 2),
+  sec.axis = sec_axis(~.-8, name="Dynamic soaring calibrated altitude (m)",
+breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
+theme_bw() + theme(legend.position= c(0.9,0.9))+scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
+                                                                                                                                                                                   +  breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")})) +scale_x_datetime(date_breaks = "1 min", labels= %H:%M, name='Burst time')
 
 #remove first GPS fix of each burst as higher error
 dat<-dat %>% group_by(burstID) %>%
@@ -237,6 +263,10 @@ dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
 dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
                 data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
                 data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
+
+dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
+                                    min=min(Altitude), max=max(Altitude),
+                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75))
 
 #m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
 #initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
@@ -305,6 +335,31 @@ ggplot(data=wave_sum)+
 ggplot(data=wave_sum)+
   geom_point(aes(x=w_height, y=pres_h_0.66))
 cor.test(x=wave_sum$w_height, y=wave_sum$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
+
+# do some stats
+w1<-lm(w_height~pres_h_0.66, data=wave_sum)
+w2<-lm(log(w_height)~pres_h_0.66, data=wave_sum)
+w3<-lm(w_height~sqrt(pres_h_0.66), data=wave_sum)
+
+check_model(w1)
+check_model(w2)
+check_model(w3)
+
+AIC(w1, w2, w3)
+
+anova(w1)
+anova(w2)
+anova(w3) # thats the one
+
+new_d<-data.frame(pres_h_0.66=sqrt(seq(0, 10, 0.2)), pres_h_0.66_unT=seq(0, 10, 0.2))
+new_d<-cbind(new_d, predict(w3, new_d, se.fit = T)[c('fit', 'se.fit')])
+new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
+new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
+
+ggplot(data=wave_sum)+
+  geom_point(aes(y=w_height, x=pres_h_0.66))+
+  geom_line(data=new_d, aes(x=pres_h_0.66_unT, y=fit),colour='red')+
+  geom_ribbon(data=new_d, aes(x=pres_h_0.66_unT, ymin=lci, ymax=uci), alpha=0.5, colour='red')
 
 #### ^^ ####
 
