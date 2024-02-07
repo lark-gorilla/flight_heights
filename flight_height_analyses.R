@@ -214,20 +214,27 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 
 #### Make  Fig 1 ####
 
-p1<-ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+scale_y_reverse(breaks=c(100800, 100850, 100900, 100950, 101000, 101050))+
+p1<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+scale_y_reverse()+
   labs(y="Pressure (mb) - reversed", x="Time")+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
-  geom_hline(yintercept=unique(dat[dat$burstID=="08611854_02_71",]$p0), colour='red')+theme_bw()+
+  geom_hline(yintercept=unique(dat[dat$burstID=="08611854_04_122",]$p0), colour='red')+theme_bw()+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
+p1.5<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+
+geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
+labs(x="Longitude", y="Latitude", colour="   Pressure (mb)")
+plot_gg(p1.5, height=4, width=8, pointcontract = 0.5)
 
-p2<-ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
+
+p2<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
 geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='green')+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='green')+
   labs(y="Altitude", x="Time")+
+  geom_hline(yintercept=0, linetype='dotted')+theme_bw()+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2))
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
 
@@ -261,7 +268,7 @@ p1<-ggplot(data=fig_dat)+
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_hline(aes(yintercept=8), linetype='dotted')+
   geom_hline(aes(yintercept=0), linetype='dotted')+
-  geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='grey', alpha=0.5)+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='grey', alpha=0.3)+
 geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
 geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
   scale_y_continuous(name='Ocean satellite date calibrated altitude (m)', breaks=seq(0, 20, 2),
@@ -377,22 +384,16 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
 m1_altD<-lmer(Altitude~method+(1|burstID:Logger), data=dat_comp) # need to formulate with nlme
 
 m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_comp)
+m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_comp)
+AIC(m1, m2)
 #resid_panel(m1)
 summary(m1)
 
+anova(m1)
 em1<-emmeans(m1, specs='method')
+em1
 pairs(em1)
 plot(em1, comparisons = TRUE)
-
-
-anova(m1_altD)
-
-rg1<-ref_grid(m1_altD, specs='method')
-emmeans(rg1, specs='method')
-contrast(rg1, method='pairwise')
-
-# model diags
-check_model(m1)
 
 
 
