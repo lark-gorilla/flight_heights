@@ -131,7 +131,7 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
 #### ^^^ ####
 
-#### Calculation of flight height using satellite ocean data (Johnston et al 2023) ####
+#### Calculation of flight height using satellite ocean data (Johnston et al 2023) + 9m GPS offset (final line of code) ####
 
 # Work out difference between pressure of sitting bursts and ECMWF.ERA5.SL.Mean.Sea.Level.Pressure
 # then use value to calibrate satellite data to 'true' surface pressure (p0). Apply 'true'
@@ -217,6 +217,11 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 #Add -9m correction to GPS elevation
 dat$alt_gps<-dat$alt-9
 
+#### ^^^ ####
+
+#### Make  plots 1 and 2 of 3 panel figure ####
+
+
 ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
   geom_line(aes(x=index, y=alt_gps), colour="green", alpha=0.5)+
@@ -229,6 +234,7 @@ p1<-ggplot(data=fig_dat)+
   geom_rect(data=fig_dat%>%filter(class=='S')%>%group_by(burstID)%>%
               summarise(xmin=min(index2), xmax=max(index2)),
             aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='grey', alpha=0.5)+
+  geom_rect(xmin=4304, xmax=4614 , ymin=-10, ymax=25,colour='purple',fill=NA)+
   geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
   geom_line(aes(x=index2, y=alt_gps), col="green", alpha=0.5, linewidth=0.1)+
   geom_line(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, linewidth=0.1)+
@@ -248,79 +254,13 @@ geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
   sec.axis = sec_axis(~.-8, name="Dynamic soaring calibrated altitude (m)",
 breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
-theme_bw() + theme(legend.position= c(0.8,0.8), axis.text=element_text(size=12),axis.title=element_text(size=14))+
+theme_bw() +
+  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=12),axis.title=element_text(size=14),
+        plot.background = element_rect(color = "purple", size = 1))+
   scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
-                                                                                                                                                                                   +  breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")})) +scale_x_datetime(date_breaks = "1 min", labels= %H:%M, name='Burst time')
-
-#remove first GPS fix of each burst as higher error
-dat<-dat %>% group_by(burstID) %>%
-  filter(row_number()!=1)%>%ungroup()%>%as.data.frame()
-
-# compare differences between three methods
-
-# format dataset for comparison # not added 1000 to all alts to make positive for Gamma
-
-dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
-
-dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
-
-dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
-                                    min=min(Altitude), max=max(Altitude),
-                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75))
-
-#m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
-#initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
-
-m1_altD<-lmer(Altitude~method+(1|burstID:Logger), data=dat_comp) # need to formulate with nlme
-
-m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_comp)
-#resid_panel(m1)
-summary(m1)
-
-em1<-emmeans(m1, specs='method')
-pairs(em1)
-plot(em1, comparisons = TRUE)
-
-
-anova(m1_altD)
-
-rg1<-ref_grid(m1_altD, specs='method')
-emmeans(rg1, specs='method')
-contrast(rg1, method='pairwise')
-
-# model diags
-check_model(m1)
-
-
-
-#### Investigating 'A' class alighting/landing bursts ####
-
-p1<-ggplot(data=dat[dat$class=="A",])+
-  geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
-  scale_y_reverse()+facet_wrap(~burstID, scales="free")
-
-p2<-ggplot(data=dat[dat$class=="A",])+
-  geom_line(aes(x=DateTime_AEDT, y=alt, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=alt), size=1)+facet_wrap(~burstID, scales="free")
-
-p1/p2
-
-ggplot(data=dat[dat$class=="A",])+
-  geom_line(aes(x=DateTime_AEDT, y=temp, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=temp), size=1)+
-  facet_wrap(~burstID, scales="free")
-
-ggplot(data=dat[dat$class=="A",])+
-  geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=wave_height), size=1)+
-  facet_wrap(~burstID, scales="free")+scale_colour_viridis() # high waves can look like DS - remember bird speed!
-
 #### ^^ ####
-
-#### WAVE HEIGHT Does wave height correlate with pres_DS - ie can the dynamic soaring pressure method be applied to wave heights? ####
+  
+#### Measuring wave height w/ altimeters and making plot 3 of 3 panel figure  ####
 
 ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=wave_height))+geom_line(aes(x=DateTime_AEDT, y=pres_pa))+facet_wrap(~burstID, scales="free")+scale_colour_viridis()
@@ -372,14 +312,101 @@ p3<-ggplot()+
   geom_ribbon(data=new_d, aes(x=pres_h_0.66, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
   theme_bw()+
   scale_x_continuous(limits=c(0, 4), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0, 4), expand = c(0,0))+
-  labs(x='Significant wave height from albatross altimeters (m)',y='Significant wave height from satellite (m)', size=5)+
+  labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
   geom_text(aes(x=2, y=0.5), label=expression("Y = 0.149 * X + 1.55 (F=9.79"["1,34"]*", "* italic(p) < 0.001* ")"), size=4)+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 # Make mega plot!!
 
-areas <- c(area(1, 1, 1, 3),area(2, 2, 2, 3), area(2, 1, 2,1))
+areas <- c(area(1, 1, 1, 3),area(2, 1, 2, 2), area(2, 3, 2,3))
 p1 + p2 + p3 + plot_layout(design = areas)
+
+#### ^^ ####
+
+#### Summarise altitude from the three methods and compare  ####
+
+#remove first GPS fix of each burst as higher error
+dat<-dat %>% group_by(burstID) %>%
+  filter(row_number()!=1)%>%ungroup()%>%as.data.frame()
+
+# compare differences between three methods
+
+# format dataset for comparison # not added 1000 to all alts to make positive for Gamma
+
+dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
+
+dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
+                data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
+                data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
+
+#summarise
+dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
+                                    min=min(Altitude), max=max(Altitude),
+                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75))
+# make plot
+cols <- scales::hue_pal()(3)
+cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.5),
+        grDevices::adjustcolor(cols[2], alpha.f = 0.5),
+        grDevices::adjustcolor(cols[3], alpha.f = 0.5))
+
+ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size=2)+
+  theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(breaks=seq(-60,60,2))+
+  scale_colour_manual(values = cols.alpha)+coord_cartesian(xlim=c(-20, 40))+
+  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
+        legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
+  scale_colour_manual("Altitude estimation method", values=cols.alpha, labels=c("Dynamic soaring calibrated altimeter", 
+  "GPS Altitude", "Satellite ocean data calibrated altimeter"))+labs(x="Altitude (m)", y="Density")
+
+#m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
+#initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
+
+m1_altD<-lmer(Altitude~method+(1|burstID:Logger), data=dat_comp) # need to formulate with nlme
+
+m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_comp)
+#resid_panel(m1)
+summary(m1)
+
+em1<-emmeans(m1, specs='method')
+pairs(em1)
+plot(em1, comparisons = TRUE)
+
+
+anova(m1_altD)
+
+rg1<-ref_grid(m1_altD, specs='method')
+emmeans(rg1, specs='method')
+contrast(rg1, method='pairwise')
+
+# model diags
+check_model(m1)
+
+
+
+#### Make DS fig and prop time in 1m band fig and table ####
+
+p1<-ggplot()+
+  geom_vline(xintercept=0, colour='blue', size=1)+
+  geom_vline(xintercept=10, colour='blue', size=0.5)+
+  geom_vline(xintercept=20, colour='blue', size=0.5)+
+  geom_rect(aes(xmin=30, xmax=31, ymin=0, ymax=4300), fill='red', size=0.5, alpha=0.3)+
+  geom_histogram(data=dat_flying, aes(x=alt_DS),colour=1, binwidth = 1)+
+  scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 31))+
+  labs(x="Altitude (m)", y="Count of altitude datapoints")+theme_bw()+
+  theme(axis.text=element_text(size=12),
+        axis.title=element_text(size=14))
+
+prop_t<-data.frame(cut(dat_flying$alt_DS, breaks = c(-5, 1:24)) %>% table)%>%
+  mutate(Proportion=Freq/length(dat_flying$alt_DS))
+
+specify_decimal <- function(x, k) trimws(format(round(x, k), nsmall=k))
+
+prop_t$Proportion<-specify_decimal(prop_t$Proportion, 5)
+prop_t$Altitude=c("<1m", "1-2m",   "2-3m",   "3-4m",   "4-5m",   "5-6m",   "6-7m",   "7-8m",   "8-9m",   "9-10m",
+"10-11m", "11-12m", "12-13m", "13-14m", "14-15m", "15-16m", "16-17m", "17-18m", "18-19m", "19-20m", "20-21m", "21-22m", "22-23m", "23-24m")
+sum(prop_t$Proportion)
+
+library(gridExtra)
+p1 + gridExtra::tableGrob(prop_t[c('Altitude', 'Proportion')], row=NULL)
 
 #### ^^ ####
 
@@ -396,7 +423,7 @@ ggplot()+
   geom_vline(xintercept=4.209, colour='red',linetype='dotted', size=1)+
   geom_label(aes(x=6.9, y=4200, label="Mean\n4.21 m"),size=5, col='red')+
   geom_rect(aes(xmin=30, xmax=50, ymin=0, ymax=4300), fill='red', size=0.5, alpha=0.3)+
-  geom_histogram(data=dat%>%filter(class %in% c("T", "L") & sit_fly=="fly"), aes(x=pres_alt),colour=1, binwidth = 1)+
+  geom_histogram(data=dat%>%filter(class %in% c("T", "L") & sit_fly=="fly"), aes(x=alt_DS),colour=1, binwidth = 1)+
   scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 50))+
   labs(x="Altitude (m)", y="Number 3D datapoints (Lat,Lon,Pressure)")+theme_bw()+
   theme(axis.text=element_text(size=12),
@@ -544,7 +571,30 @@ sf3d<-temp1%>%st_as_sf(coords = c("X", "Y", "pres_alt"), crs = 4326, dim = "XYZ"
 
 st_write(sf3d, "C:/Users/mmil0049/Downloads/temp.kml")
 
+#### Investigating 'A' class alighting/landing bursts - OLD CODE ####
 
+p1<-ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
+  scale_y_reverse()+facet_wrap(~burstID, scales="free")
+
+p2<-ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=alt, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt), size=1)+facet_wrap(~burstID, scales="free")
+
+p1/p2
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=temp, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=temp), size=1)+
+  facet_wrap(~burstID, scales="free")
+
+ggplot(data=dat[dat$class=="A",])+
+  geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=wave_height), size=1)+
+  facet_wrap(~burstID, scales="free")+scale_colour_viridis() # high waves can look like DS - remember bird speed!
+
+#### ^^ ####
 
 
 ## have a look at cleasby gannet data
