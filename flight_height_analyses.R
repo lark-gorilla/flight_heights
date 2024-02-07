@@ -108,25 +108,20 @@ m=0.0289644
 g=9.80665
 
 #Add -9m correction to GPS elevation 
-dat$alt<-dat$alt-9
+dat$alt_gps<-dat$alt-9
 
 dat$index<-1:nrow(dat)
 dat$p0<-0
-dat$alt_gps0<-0
 
 dat$alt_DS<-NA
 for (i in unique(dat$burstID))
 {
   # original method - 95% upper quantile of pressure to set p0 for entire burst
   dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
-  # same assumption for GPS - 95% LOWER quantile of alt to set min alt for entire burst
-  dat[dat$burstID==i,]$alt_gps0<-quantile(dat[dat$burstID==i,]$alt, probs=0.05)
 }
   
 dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
-
-dat$alt_gps<-dat$alt-dat$alt_gps0 # recalc alt using 'on water burst' assumption
 
 #### ^^^ ####
 
