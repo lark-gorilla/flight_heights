@@ -219,8 +219,29 @@ dat$alt_gps<-dat$alt-9
 
 #### ^^^ ####
 
-#### Make  plots 1 and 2 of 3 panel figure ####
 
+#### Make  Fig 1 ####
+
+p1<-ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+scale_y_reverse(breaks=c(100800, 100850, 100900, 100950, 101000, 101050))+
+  labs(y="Pressure (mb) - reversed", x="Time")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  geom_hline(yintercept=unique(dat[dat$burstID=="08611854_02_71",]$p0), colour='red')+theme_bw()+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
+
+
+p2<-ggplot(data=dat[dat$burstID=="08611854_02_71",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
+geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='green')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='green')+
+  labs(y="Altitude", x="Time")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
+
+
+#### ^^^ ####
+
+#### Make  plots 1 and 2 of 3 panel figure ####
 
 ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
