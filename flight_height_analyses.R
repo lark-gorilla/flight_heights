@@ -67,7 +67,7 @@ dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-
 dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
 #
 
-#### Detect loops #### https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data
+#### Detect loops https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data ####
 
 sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
 
@@ -99,7 +99,7 @@ dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
 
 #### ^^ ####
 
-#### Calculation of flight height using dynamic soaring method ####
+#### Calculation of flight height using dynamic soaring method and correction to GPS ####
 
 # barometric formula (Berberan Santos et al. 1997)
 #h=((k*T)/(m*g))*ln(p/p0)
@@ -107,28 +107,27 @@ k=8.31432
 m=0.0289644
 g=9.80665
 
-# for p0 per burst we want to identify pressure level at sea level, we can assume waves
-# so finding upper 95th? quantile could represent burst mean sea level, negative values 
-# in resultant flight height would be wave troughs. A more precise method would find the 
-# max pressure point of each osscillation (after a short window smooth to remove error),
-# and then take the mean of these points, you could even run a gam through these if we
-# expect local pressure changes to change over the burst - possible on transiting bursts.
-# Question we need answered if birds always meet the surface during their soaring oscillation
-# Anchoring each oscillaition to the sea surface removes negative values but probably 
-# overestimates.. hmm also look at a small moving window to clean up 
+#Add -9m correction to GPS elevation 
+dat$alt<-dat$alt-9
 
 dat$index<-1:nrow(dat)
 dat$p0<-0
+dat$alt_gps0<-0
 
 dat$alt_DS<-NA
 for (i in unique(dat$burstID))
 {
   # original method - 95% upper quantile of pressure to set p0 for entire burst
   dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
+  # same assumption for GPS - 95% LOWER quantile of alt to set min alt for entire burst
+  dat[dat$burstID==i,]$alt_gps0<-quantile(dat[dat$burstID==i,]$alt, probs=0.05)
 }
   
 dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
+
+dat$alt_gps<-dat$alt-dat$alt_gps0 # recalc alt using 'on water burst' assumption
+
 #### ^^^ ####
 
 #### Calculation of flight height using satellite ocean data (Johnston et al 2023) + 9m GPS offset (final line of code) ####
@@ -214,8 +213,6 @@ dat$p0_SO<-ifelse(is.na(dat$sat_sit_pdiff),dat$mean_sea_level_pressure+dat$neare
 dat$alt_SO<-(-1*  # *-1 flips negative/positive values
                ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_SO))
 
-#Add -9m correction to GPS elevation
-dat$alt_gps<-dat$alt-9
 
 #### ^^^ ####
 
@@ -269,6 +266,7 @@ p1<-ggplot(data=fig_dat)+
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_hline(aes(yintercept=8), linetype='dotted')+
   geom_hline(aes(yintercept=0), linetype='dotted')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='grey', alpha=0.5)+
 geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
 geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
   scale_y_continuous(name='Ocean satellite date calibrated altitude (m)', breaks=seq(0, 20, 2),
@@ -334,7 +332,7 @@ p3<-ggplot()+
   theme_bw()+
   scale_x_continuous(limits=c(0, 4), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0, 4), expand = c(0,0))+
   labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
-  geom_text(aes(x=2, y=0.5), label=expression("Y = 0.149 * X + 1.55 (F=9.79"["1,34"]*", "* italic(p) < 0.001* ")"), size=4)+
+  geom_text(aes(x=2, y=0.5), label=expression("Y = 0.39 * X + 1.13 (F=13.21"["1,31"]*", "* italic(p) < 0.001* ")"), size=4)+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 # Make mega plot!!
