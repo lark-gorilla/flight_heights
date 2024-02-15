@@ -133,35 +133,36 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 
 # analysis run per logger as each will have unique sensor calibration
 
+#### vis helping plots ^^^ ####
+#ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
+  #geom_abline()+facet_wrap(~class, scales="free")
 
-ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
-  geom_abline()+facet_wrap(~class, scales="free")
-
-ggplot(data=dat%>%filter(class=="S")%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa), col='red')+
-  facet_wrap(~ID, scales="free")
+#ggplot(data=dat%>%filter(class=="S")%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa), col='red')+
+#  facet_wrap(~ID, scales="free")
 
 # check each individually
-p1<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-p2<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+#p1<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+#p2<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
 
-p1/p2
+#p1/p2
 
-p1<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-p2<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+#p1<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+#p2<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
 
-p1/p2
+#p1/p2
 
-p1<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-p2<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
+#p1<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
+#p2<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
+#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
 
-p1/p2
+#p1/p2
+#### ^^^ ####
 
 # Ok use sitting points 
 
@@ -283,6 +284,11 @@ theme_bw() +
   
 #### Measuring wave height w/ altimeters and making plot 3 of 3 panel figure  ####
 
+#summarise first
+dat%>%filter(class=="S"& wave_height!="NA")%>%
+  summarise(mn_gps=mean(alt_gps), sd_gps=sd(alt_gps), mn_ds=mean(alt_DS), sd_ds=sd(alt_DS), 
+                mn_wh=mean(wave_height), sd_wh=sd(wave_height)) 
+
 ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=wave_height))+geom_line(aes(x=DateTime_AEDT, y=pres_pa))+facet_wrap(~burstID, scales="free")+scale_colour_viridis()
 
@@ -290,14 +296,23 @@ ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
 # very rough calc, need to tweak variance/mean etc for some dodgy bursts
 # Significant wave height can be shown to correspond to the average wave height of the top one-third highest waves
 wave_sum<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(p_var=var(pres_pa), w_height=mean(wave_height), 
-                                                                   pres_h_0.66=quantile(alt_DS, probs=0.66)) # could do 0.6 as we already take 95% percentile
+                                                                   pres_h_0.66=quantile(alt_DS, probs=0.66),
+                                                                   gps_h_0.66=quantile(alt_gps, probs=0.66)) # could do 0.6 as we already take 95% percentile
 
 ggplot(data=wave_sum)+
   geom_point(aes(x=w_height, y=p_var)) # looks like it
 
 ggplot(data=wave_sum)+
   geom_point(aes(x=w_height, y=pres_h_0.66))
+
 cor.test(x=wave_sum$w_height, y=wave_sum$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
+
+cor.test(x=wave_sum[wave_sum$pres_h_0.66<5,]$w_height,
+         y=wave_sum[wave_sum$pres_h_0.66<5,]$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
+
+cor.test(x=wave_sum[wave_sum$gps_h_0.66<5,]$w_height,
+         y=wave_sum[wave_sum$gps_h_0.66<5,]$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
+
 
 # do some stats
 w1<-lm(w_height~pres_h_0.66, data=wave_sum)
@@ -305,6 +320,9 @@ w2<-lm(log(w_height)~pres_h_0.66, data=wave_sum)
 w3<-lm(w_height~sqrt(pres_h_0.66), data=wave_sum)
 w4<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$w_height<3 & wave_sum$pres_h_0.66<8,])
 w5<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$pres_h_0.66<5,])
+
+cor.test(x=wave_sum[wave_sum$pres_h_0.66<5,]$w_height, y=wave_sum[wave_sum$pres_h_0.66<5,]$pres_h_0.66,
+         method='pearson', na.action=na.omit)
 
 check_model(w1)
 check_model(w2)
@@ -355,6 +373,9 @@ dat<-dat %>% group_by(burstID) %>%
 # format dataset for comparison # not added 1000 to all alts to make positive for Gamma
 
 dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
+
+cor.test(dat_flying$alt_DS, dat_flying$alt_gps)
+ggplot(data=dat_flying)+geom_point(aes(x=alt_gps, y=alt_DS))
 
 dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
                 data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
