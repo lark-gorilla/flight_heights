@@ -213,6 +213,23 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 #### ^^^ ####
 
 
+#### correlation between methods ####
+
+dat%>%filter(class%in%c("T", "L"))%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
+  summarise(cor=cor.test(pres_pa, alt_gps)$estimate, pval=cor.test(pres_pa, alt_gps)$p.value)
+
+corz<-dat%>%filter(class%in%c("T", "L"))%>%group_by(burstID)%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
+  summarise(cor=cor.test(alt_DS, alt_gps)$estimate, pval=cor.test(alt_DS, alt_gps)$p.value,
+            pres_cor=cor.test(pres_pa, alt_gps)$estimate, pres_pval=cor.test(pres_pa, alt_gps)$p.value )
+
+length(which(corz$pres_pval<0.05))
+nrow(corz)
+length(which(corz$pres_pval<0.05 & corz$pres_cor>0))
+summary(corz[corz$pres_pval<0.05 & corz$pres_cor<0,]$pres_cor)
+
+#### ^^^ ####
+
+
 #### Make  Fig 1 ####
 
 p1<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
