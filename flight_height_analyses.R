@@ -10,6 +10,7 @@ library(sf)
 library(nlme)
 library(emmeans)
 library(performance)
+library(oceanwaves)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -213,7 +214,7 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 #### ^^^ ####
 
 
-#### correlation between methods ####
+#### correlation and cycle detection between methods ####
 
 dat%>%filter(class%in%c("T", "L"))%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
   summarise(cor=cor.test(pres_pa, alt_gps)$estimate, pval=cor.test(pres_pa, alt_gps)$p.value)
@@ -226,6 +227,50 @@ length(which(corz$pres_pval<0.05))
 nrow(corz)
 length(which(corz$pres_pval<0.05 & corz$pres_cor>0))
 summary(corz[corz$pres_pval<0.05 & corz$pres_cor<0,]$pres_cor)
+
+# Using Zero-crossing method in oceanwaves package
+
+zc_summary<-NULL
+for ( i in unique(dat[dat$class%in%c("T", "L", "S"),]$burstID))
+{
+ tout<-data.frame(class=unique(dat[dat$burstID==i,]$class), burstID=i, 
+                  ds_hsig=NA,ds_hmean=NA, ds_tmean=NA, ds_tsig=NA,
+                  gps_hsig=NA,gps_hmean=NA, gps_tmean=NA, gps_tsig=NA)
+  
+ d1<-waveStatsZC(dat[dat$burstID==i,]$alt_DS, 1,)
+  tout$ds_hsig=d1$Hsig
+  tout$ds_hmean=d1$Hmean
+  tout$ds_tmean=d1$Tmean
+  tout$ds_tsig=d1$Tsig
+  
+  
+  possibleError <-tryCatch(
+    waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,),
+    error=function(e) e)
+  
+  if(!inherits(possibleError, "error")){
+  g1<-waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,) 
+  tout$gps_hsig=g1$Hsig
+  tout$gps_hmean=g1$Hmean
+  tout$gps_tmean=g1$Tmean
+  tout$gps_tsig=g1$Tsig
+  }else{}
+  
+  zc_summary<-rbind(zc_summary, tout)
+}
+# two altimeter methods identical SO method not run
+
+ggplot(data=zc_summary)+geom_point(aes(x=ds_hmean, y=gps_hmean))+facet_wrap(~class, scales='free')
+ggplot(data=zc_summary)+geom_point(aes(x=ds_tmean, y=gps_tmean))+facet_wrap(~class, scales='free')
+
+na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(mean)
+na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(sd)
+
+#ds_hsig ds_hmean ds_tmean  ds_tsig gps_hsig gps_hmean gps_tmean gps_tsig
+#1 8.018721 5.369986 9.360565 14.20945 9.770262  6.538162  13.35991  22.6568
+
+#ds_hsig ds_hmean ds_tmean  ds_tsig gps_hsig gps_hmean gps_tmean gps_tsig
+#1 2.861487 1.870761 2.986462 5.957045  4.39308  2.583361  7.725046 20.26673
 
 #### ^^^ ####
 
@@ -308,6 +353,13 @@ dat%>%filter(class=="S"& wave_height!="NA")%>%
 
 ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=wave_height))+geom_line(aes(x=DateTime_AEDT, y=pres_pa))+facet_wrap(~burstID, scales="free")+scale_colour_viridis()
+
+ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_DS), colour='red')+geom_line(aes(x=DateTime_AEDT, y=alt_DS), colour='red')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+geom_line(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+  
+  facet_wrap(~burstID, scales="free")
+
+
 
 # ok nice, so does variance increase with wave_height
 # very rough calc, need to tweak variance/mean etc for some dodgy bursts
