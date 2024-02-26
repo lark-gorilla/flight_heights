@@ -316,7 +316,10 @@ fig_dat<-dat%>%filter(ID==41490936)%>%mutate(index2=1:n())%>%filter(index2<5109)
 p1<-ggplot(data=fig_dat)+
   geom_rect(data=fig_dat%>%filter(class=='S')%>%group_by(burstID)%>%
               summarise(xmin=min(index2), xmax=max(index2)),
-            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='grey', alpha=0.5)+
+            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='darkgrey', alpha=0.5)+
+  geom_rect(data=fig_dat%>%filter(class=='A')%>%group_by(burstID)%>%
+              summarise(xmin=min(index2), xmax=max(index2)),
+            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='lightgrey', alpha=0.5)+
   geom_rect(xmin=4304, xmax=4614 , ymin=-10, ymax=25,colour='purple',fill=NA)+
   geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
   geom_line(aes(x=index2, y=alt_gps), col="green", alpha=0.5, linewidth=0.1)+
@@ -324,8 +327,9 @@ p1<-ggplot(data=fig_dat)+
   geom_point(aes(x=index2, y=alt_DS), colour='black', size=0.5)+
   geom_point(aes(x=index2, y=alt_gps), col="green", alpha=0.5, size=0.5)+
   geom_point(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, size=0.5)+
-  scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25))+labs(y='Altitude (m)', x='5 minute burst index')+
-  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i))+
+  geom_text(aes(x=130, y=24), label="a)", size=8)+
+  scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25),  expand = c(0,0))+labs(y='Altitude (m)', x='5 minute burst index')+
+  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i),  expand = c(0,0))+
   theme_bw()+ theme( axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
@@ -337,9 +341,10 @@ geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
   scale_y_continuous(name='Ocean satellite date calibrated altitude (m)', breaks=seq(0, 20, 2),
   sec.axis = sec_axis(~.-8, name="Dynamic soaring calibrated altitude (m)",
 breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
-  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)',  expand = c(0,0))+
 theme_bw() +
-  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=12),axis.title=element_text(size=14),
+  geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=18), label="b)", size=8)+
+  theme(legend.position= c(0.8,0.8), legend.text=element_text(size=12), axis.text=element_text(size=12),axis.title=element_text(size=14),
         plot.background = element_rect(color = "purple", size = 1))+
   scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
 #### ^^ ####
@@ -364,34 +369,17 @@ ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
 # ok nice, so does variance increase with wave_height
 # very rough calc, need to tweak variance/mean etc for some dodgy bursts
 # Significant wave height can be shown to correspond to the average wave height of the top one-third highest waves
-wave_sum<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(p_var=var(pres_pa), w_height=mean(wave_height), 
-                                                                   pres_h_0.66=quantile(alt_DS, probs=0.66),
-                                                                   gps_h_0.66=quantile(alt_gps, probs=0.66)) # could do 0.6 as we already take 95% percentile
 
-ggplot(data=wave_sum)+
-  geom_point(aes(x=w_height, y=p_var)) # looks like it
+wave_temp<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(w_height=mean(wave_height),
+                                                        w_period=mean(wave_period)) 
 
-ggplot(data=wave_sum)+
-  geom_point(aes(x=w_height, y=pres_h_0.66))
+wave_sum<-left_join(zc_summary%>%filter(class=="S"), wave_temp, by="burstID")
 
-cor.test(x=wave_sum$w_height, y=wave_sum$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
-
-cor.test(x=wave_sum[wave_sum$pres_h_0.66<5,]$w_height,
-         y=wave_sum[wave_sum$pres_h_0.66<5,]$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
-
-cor.test(x=wave_sum[wave_sum$gps_h_0.66<5,]$w_height,
-         y=wave_sum[wave_sum$gps_h_0.66<5,]$pres_h_0.66, method='pearson', na.action=na.omit) # looks like it
-
-
-# do some stats
-w1<-lm(w_height~pres_h_0.66, data=wave_sum)
-w2<-lm(log(w_height)~pres_h_0.66, data=wave_sum)
-w3<-lm(w_height~sqrt(pres_h_0.66), data=wave_sum)
-w4<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$w_height<3 & wave_sum$pres_h_0.66<8,])
-w5<-lm(w_height~pres_h_0.66, data=wave_sum[wave_sum$pres_h_0.66<5,])
-
-cor.test(x=wave_sum[wave_sum$pres_h_0.66<5,]$w_height, y=wave_sum[wave_sum$pres_h_0.66<5,]$pres_h_0.66,
-         method='pearson', na.action=na.omit)
+# lms tell us which outliers to remove b4 pearsons corr
+w1<-lm(w_height~ds_hsig, data=wave_sum)
+w2<-lm(w_height~gps_hsig, data=wave_sum)
+w3<-lm(w_period~ds_tmean, data=wave_sum)
+w4<-lm(w_period~gps_tmean, data=wave_sum)
 
 check_model(w1)
 check_model(w2)
@@ -399,35 +387,75 @@ check_model(w3)
 check_model(w4)
 check_model(w5)
 
-AIC(w1, w2, w3, w4, w5)
+wp1<-ggplot(data=wave_sum[-c(13, 17,18,32),])+geom_point(aes(y=w_height, x=ds_hsig))+theme_bw()+
+  labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
+  geom_text(aes(x=7, y=1.4), label=expression(italic(r)*" = "*"0.58, "* italic(p) < 0.001), size=4)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
-anova(w1)
-anova(w2)
-anova(w3) 
-anova(w4) # thats the one
-anova(w5) # thats the one
+wp2<-ggplot(data=wave_sum[wave_sum$gps_hsig<6,])+geom_point(aes(y=w_height, x=gps_hsig))+theme_bw()+
+  labs(x='Wave height from albatross GPS (m)',y='Wave height from satellite (m)', size=5)+
+  geom_text(aes(x=4, y=1.4), label=expression(italic(r)*" = "*"0.37, "* italic(p)*" = "*0.03), size=4)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
-summary(w5)
+wp3<-ggplot(data=wave_sum[-c(13, 17,18,32),])+geom_point(aes(y=w_period, x=ds_tmean))+theme_bw()+
+  labs(x='Wave period from albatross altimeters (s)',y='Wave period from satellite (s)', size=5)+
+  geom_text(aes(x=9, y=7), label=expression(italic(r)*" = "*"0.86, "* italic(p) < 0.001), size=4)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
-new_d<-data.frame(pres_h_0.66=seq(0, 10, 0.2))
-new_d<-cbind(new_d, predict(w5, new_d, se.fit = T)[c('fit', 'se.fit')])
+wp4<-ggplot(data=wave_sum[wave_sum$gps_hsig<6,])+geom_point(aes(y=w_period, x=gps_tmean))+theme_bw()+
+  labs(x='Wave period from albatross GPS (s)',y='Wave period from satellite (s)', size=5)+
+  geom_text(aes(x=30, y=7), label=expression(italic(p)*" = NS"), size=4)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+cor.test(x=wave_sum[-c(13, 17,18,32),]$w_height, y=wave_sum[-c(13, 17,18,32),]$ds_hsig, method='pearson', na.action=na.omit) 
+cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_height, y=wave_sum[wave_sum$gps_hsig<6,]$gps_hsig, method='pearson', na.acmtion=na.omit)
+
+cor.test(x=wave_sum[-c(13, 17,18,32),]$w_period, y=wave_sum[-c(13, 17,18,32),]$ds_tmean, method='pearson', na.action=na.omit)
+cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_period, y=wave_sum[wave_sum$gps_hsig<6,]$gps_tmean, method='pearson', na.acmtion=na.omit)
+
+(wp1+wp2)/(wp3+wp4)
+
+
+# for main fig
+w1<-lm(w_height~ds_hsig, data=wave_sum[-c(13, 17,18,32),])
+w3<-lm(w_period~ds_tmean, data=wave_sum[-c(13, 17,18,32),])
+
+new_d<-data.frame(ds_hsig=seq(0, 10, 0.2))
+new_d<-cbind(new_d, predict(w1, new_d, se.fit = T)[c('fit', 'se.fit')])
 new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
 new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
 
 p3<-ggplot()+
-  geom_point(data=wave_sum, aes(y=w_height, x=pres_h_0.66))+
-  geom_line(data=new_d, aes(x=pres_h_0.66, y=fit),colour='red', linewidth=1)+
-  geom_ribbon(data=new_d, aes(x=pres_h_0.66, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
+  geom_point(data=wave_sum, aes(y=w_height, x=ds_hsig))+
+  geom_line(data=new_d, aes(x=ds_hsig, y=fit),colour='red', linewidth=1)+
+  geom_ribbon(data=new_d, aes(x=ds_hsig, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
   theme_bw()+
-  scale_x_continuous(limits=c(0, 4), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0, 4), expand = c(0,0))+
+  scale_x_continuous(limits=c(0, 9), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0.5, 4), expand = c(0,0))+
   labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
-  geom_text(aes(x=2, y=0.5), label=expression("Y = 0.39 * X + 1.13 (F=13.21"["1,31"]*", "* italic(p) < 0.001* ")"), size=4)+
+  geom_text(aes(x=2, y=3.5), label=expression(italic(r)*" = "*"0.58, "* italic(p) < 0.001), size=4)+
+  geom_text(aes(x=8, y=1), label="c)", size=8)+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+
+new_d<-data.frame(ds_tmean=seq(4, 13, 0.2))
+new_d<-cbind(new_d, predict(w3, new_d, se.fit = T)[c('fit', 'se.fit')])
+new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
+new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
+
+p4<-ggplot()+
+  geom_point(data=wave_sum[-c(13, 17,18,32),], aes(y=w_period, x=ds_tmean))+
+  geom_line(data=new_d, aes(x=ds_tmean, y=fit),colour='red', linewidth=1)+
+  geom_ribbon(data=new_d, aes(x=ds_tmean, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
+  theme_bw()+
+  scale_x_continuous(limits=c(4, 13), breaks=4:13, expand = c(0,0))+scale_y_continuous(limits=c(6, 13), breaks=6:13, expand = c(0,0))+
+  labs(x='Wave period from albatross altimeters (s)',y='Wave period from satellite (s)', size=5)+
+  geom_text(aes(x=6, y=12), label=expression(italic(r)*" = "*"0.86, "* italic(p) < 0.001), size=4)+
+  geom_text(aes(x=12, y=7), label="d)", size=8)+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
 
 # Make mega plot!!
 
 areas <- c(area(1, 1, 1, 3),area(2, 1, 2, 2), area(2, 3, 2,3))
-p1 + p2 + p3 + plot_layout(design = areas)
+p1 + p2 + (p3/p4) + plot_layout(design = areas)
 
 #### ^^ ####
 
