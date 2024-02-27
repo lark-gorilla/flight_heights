@@ -214,7 +214,7 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 #### ^^^ ####
 
 
-#### correlation and cycle detection between methods ####
+#### correlation and cycle detection between methods - not used in the end ####
 
 dat%>%filter(class%in%c("T", "L"))%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
   summarise(cor=cor.test(pres_pa, alt_gps)$estimate, pval=cor.test(pres_pa, alt_gps)$p.value)
@@ -266,11 +266,14 @@ ggplot(data=zc_summary)+geom_point(aes(x=ds_tmean, y=gps_tmean))+facet_wrap(~cla
 na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(mean)
 na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(sd)
 
-#ds_hsig ds_hmean ds_tmean  ds_tsig gps_hsig gps_hmean gps_tmean gps_tsig
-#1 8.018721 5.369986 9.360565 14.20945 9.770262  6.538162  13.35991  22.6568
+#ds_hsig ds_hmean ds_tmean  ds_tsig     gps_hsig gps_hmean gps_tmean gps_tsig
+#8.018721 5.369986 9.360565 14.20945    9.770262  6.538162  13.35991  22.6568
 
-#ds_hsig ds_hmean ds_tmean  ds_tsig gps_hsig gps_hmean gps_tmean gps_tsig
-#1 2.861487 1.870761 2.986462 5.957045  4.39308  2.583361  7.725046 20.26673
+#ds_hsig ds_hmean ds_tmean  ds_tsig    gps_hsig gps_hmean gps_tmean gps_tsig
+#2.861487 1.870761 2.986462 5.957045    4.39308  2.583361  7.725046 20.26673
+
+t.test(zc_summary$ds_hmean, zc_summary$gps_hmean, paired=T)
+t.test(zc_summary$ds_tmean, zc_summary$gps_tmean, paired=T)
 
 #### ^^^ ####
 
@@ -285,21 +288,32 @@ p1<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_A
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
 p1.5<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+
-geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
-labs(x="Longitude", y="Latitude", colour="   Pressure (mb)")
-plot_gg(p1.5, height=4, width=8, pointcontract = 0.5)
+geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(option='plasma',trans="reverse")+
+labs(x="Longitude", y="Latitude", colour="Pressure\n(mb)\n-reversed\n\n\n")+theme_bw()
+plot_gg(p1.5, height=4, width=8, pointcontract = 0.5, sunangle = 40)
 
+render_snapshot("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot.png", clear = T)
 
 p2<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
 geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='green')+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='green')+
-  labs(y="Altitude", x="Time")+
+  labs(y="Altitude (m)")+
   geom_hline(yintercept=0, linetype='dotted')+theme_bw()+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
-  scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2))
+  scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
+library(figpatch)
+p1.6 <- fig("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot_zoom.png")
+  
+wrap_plots(p1, p1.6, p2, nrow=3)
+p1+p1.6+p2 + plot_layout(nrow=3, heights = c(1,2))+ plot_annotation(tag_levels = 'a',tag_suffix = ')')+theme(plot.tag = element_text(size = 14))
+ 
+# do manually
+p1/p2
+
+p1/p1.6/p2
 
 #### ^^^ ####
 
