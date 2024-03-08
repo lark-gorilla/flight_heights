@@ -231,10 +231,10 @@ tmap_mode("view")
 tm_shape(dat_sf)+tm_dots(col="embc")+tm_mouse_coordinates()
 
 # Add day night classification.. slow loop
-tripdat$daynight<-"day"
-for(i in 1:nrow(tripdat)){
-dn1<-getSunlightTimes(date = as.Date(tripdat$DateTime_AEDT[i]), lat = tripdat$Latitude[i], lon = tripdat$Longitude[i],tz = "Australia/Sydney")
-if(tripdat$DateTime_AEDT[i]>dn1$nauticalDusk  &   tripdat$DateTime_AEDT[i]<dn1$nightEnd){tripdat$daynight[i]<-"night"};print(i)}                       
+dat$daynight<-"night"
+for(i in 1:nrow(dat)){
+  dn1<-getSunlightTimes(date = as.Date(dat$DateTime_AEDT[i],tz = "Australia/Sydney"), lat = dat$Latitude[i], lon = dat$Longitude[i],tz = "Australia/Sydney")
+  if(dat$DateTime_AEDT[i]<dn1$nauticalDusk  &   dat$DateTime_AEDT[i]>dn1$nightEnd){dat$daynight[i]<-"day"};print(i)}                       
 
 #### ---- ####
 
