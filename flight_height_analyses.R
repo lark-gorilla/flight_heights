@@ -68,7 +68,25 @@ dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-
 dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
 #
 
-#### Detect loops https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data ####
+#### summary table of env variables ####
+tabl1<-dat%>%filter(class %in% c("T", "L", "A"))%>%dplyr::select(ColDist , dist2coast, wind_speed, wind_dir,
+                                                          chla, sst, wave_height, wave_period)%>%
+                            summarise_all(list(mean=mean, sd=sd, qz=quantile), na.rm=T)
+
+#write_xlsx(tabl1, 'analyses/env_summary_table.xlsx')
+
+dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(b_w_class)%>%summarise(n())
+#b_w_class `n()`
+#<chr>     <int>
+#  1 crosswind 20224
+#2 headwind   7540
+#3 tailwind   4249
+
+dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
+# all flights in day!
+#### ^^ ####
+
+#### Detect loops NOt used in final analyses https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data ####
 
 sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
 
@@ -508,7 +526,7 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
         legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
   scale_colour_manual("Altitude estimation method", values=cols.alpha, labels=c("Dynamic soaring calibrated altimeter", 
-  "GPS Altitude", "Satellite ocean data calibrated altimeter"))+labs(x="Altitude (m)", y="Density")
+  "GPS Altitude", "Sitting satellite calibrated altimeter"))+labs(x="Altitude (m)", y="Density")
 
 #m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
 #initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
