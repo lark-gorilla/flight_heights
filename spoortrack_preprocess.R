@@ -2,6 +2,7 @@ library(dplyr)
 library(tidyr)
 library(patchwork)
 library(lubridate)
+library(oceanwaves)
 
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
@@ -37,14 +38,42 @@ dat$timestamp2<-lubridate::with_tz(dat$timestamp2, "Australia/Sydney")
 # get speed histogram
 sp_df<-dat%>%group_by(burstID)%>%summarise(speed=first(speed_kmh))
 
-sp_df%>%filter(tripID!="-1"&is.finite(speed_diff) & ColDist>1 & speed_diff>4)%>%
-  summarise(mean_s=mean(speed_diff), sd_s=sd(speed_diff))
+sp_df%>%filter((speed/3.6)>4)%>%
+  summarise(mean_s=mean(speed/3.6), sd_s=sd(speed/3.6))
 #mean_s     sd_s
-#1 13.4574 4.1042
+#1 14.1 4.64
 
-#plot non-island points 
+ 
 ggplot()+
   geom_histogram(data=sp_df,
                  aes(x=speed, fill=ifelse(speed<15, "blue", "red")), colour=1, binwidth=1, boundary=0)+
-  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.46±4.1 m/s"), size=5)+
   scale_x_continuous(breaks=0:150)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed km/h")+theme(legend.position="none")
+
+ggplot()+
+  geom_histogram(data=sp_df,
+                 aes(x=speed/3.6, fill=ifelse((speed/3.6)<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
+  scale_x_continuous(breaks=0:32)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
+
+
+zc_summary<-NULL
+for (i in dat$burstID)
+{
+  tout<-data.frame(burstID=i, speed=unique(dat[dat$burstID==i,]$speed_kmh),
+                   temp=unique(dat[dat$burstID==i,]$temperature),
+                   ds_hsig=NA,ds_hmean=NA, ds_tmean=NA, ds_tsig=NA)
+  
+  d1<-waveStatsZC(dat[dat$burstID==i,]$pressure, 1,)
+  tout$ds_hsig=d1$Hsig
+  tout$ds_hmean=d1$Hmean
+  tout$ds_tmean=d1$Tmean
+  tout$ds_tsig=d1$Tsig
+  
+  zc_summary<-rbind(zc_summary, tout)
+}
+
+ggplot(data=zc_summary)+geom_histogram(aes(x=speed))
+ggplot(data=zc_summary)+geom_histogram(aes(x=temp))
+ggplot(data=zc_summary)+geom_histogram(aes(x=Hsig))
+ggplot(data=zc_summary)+geom_histogram(aes(x=Hmean))
+ggplot(data=zc_summary)+geom_histogram(aes(x=Tmean))
+ggplot(data=zc_summary)+geom_histogram(aes(x=Tsig))
