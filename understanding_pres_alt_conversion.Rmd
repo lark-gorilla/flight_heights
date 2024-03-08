@@ -1,21 +1,12 @@
 ---
 title: "pres 2 alt"
-output: html_document
+output:
+  word_document: default
+  html_document: default
 date: "2023-11-22"
 ---
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r}
-knitr::opts_chunk$set(echo = TRUE)
+```{r, echo=F, fig.width=9, fig.height=11.5, results='asis'}
 
 library(ggplot2)
 library(dplyr)
@@ -38,7 +29,6 @@ burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT, tz="Australia/Sydney")
 dat<-dat%>%filter(deployed_ID!="predeployment")     
 
-table(dat$burstID, dat$class)
 
 bad_ids<-c(
   "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
@@ -63,8 +53,6 @@ bad_ids<-c(
   "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
   "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
   "08611649_01_40",  "08611649_01_41", "08611649_01_17")
-
-length(unique(dat$burstID));length(bad_ids)
   
 dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
 
@@ -83,32 +71,6 @@ c('08611854_02_73', '08611854_04_121', '08611854_06_155')) # remove 3 bursts wit
 dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-14 16:59:35", tz="Australia/Sydney")))
 dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
 #
-
-#### Detect loops https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data ####
-
-sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
-
-dat$loop=F
-
-for(i in unique(dat$burstID))
-{
-  track_dat <- dat[dat$burstID==i,]%>%
-  st_as_sf(coords = c("Longitude","Latitude"), crs = 4326)
-
-track_ls<-track_dat%>%st_combine() |> st_cast("LINESTRING")
-
-# could use this code to remove either v small or large loops track_poly_df <- 
-#track_polys |>  st_as_sf(crs = 4326) |> st_set_geometry("geometry") |> 
-#  mutate( size = st_area(geometry) ) |> arrange(desc(size)) 
-
-track_polys <- st_intersection(track_ls,track_ls) |>st_polygonize() |> st_cast() %>%st_union()
-
-int1<-st_intersects(track_dat, track_polys, sparse=F)
-
-if(!TRUE %in% int1){next} # if not loops skip to next
-
-dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
-}
 
 # finally set all sitting points that might be looped over as not in the loop
 
@@ -142,44 +104,43 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
 
 #### ^^^ ####
-
-for (i in unique(dat$burstID))
+for(j in c("T", "L", "S", "A"))
 {
-  
+for (i in unique(dat[dat$class==j,]$burstID))
+{
+  cat("\n\n## ", i, "\n")
 
   p2<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+scale_y_reverse()+
-  labs(y="Pressure (mb)", x="Time",title=paste("BurstID:", i))+
+  labs(y="Pressure (mb) - reversed", x="Time", color="Behaviour")+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
   geom_hline(yintercept=unique(dat[dat$burstID==i,]$p0), linetype='dotted')+theme_bw()+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
-p2.5<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
-geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='green')+
-  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='green')+
-  labs(y="Altitude", x="Time", title=paste("BurstID:", i))+
+dt1<-rbind(data.frame(DateTime_AEDT=dat[dat$burstID==i,]$DateTime_AEDT, alt=dat[dat$burstID==i,]$alt_DS, sensor="DS"),
+           data.frame(DateTime_AEDT=dat[dat$burstID==i,]$DateTime_AEDT, alt=dat[dat$burstID==i,]$alt_gps, sensor="GPS"))
+  
+  p2.5<-ggplot(data=dt1)+
+  geom_line(aes(x=DateTime_AEDT, y=alt, group=sensor, colour=sensor))+
+  geom_point(aes(x=DateTime_AEDT, y=alt, colour=sensor), size=1)+
+  labs(y="Altitude (m)", x="Time", shape="Behaviour")+theme_bw()+
+  scale_colour_manual("Sensor", values=c("black", "green"),labels=c("Dynamic soaring\ncalibrated altimeter", "GPS altitude"))+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
   
-  p3<-ggplot(data=dat[dat$burstID==i,])+geom_path(aes(x=Longitude, y=Latitude, group=1))+ggtitle(paste("BurstID:", i))+
-    geom_point(aes(x=Longitude, y=Latitude, colour=alt_DS, shape=sit_fly))+scale_color_viridis()
+  p3<-ggplot(data=dat[dat$burstID==i,])+geom_path(aes(x=Longitude, y=Latitude, group=1))+theme_bw()+
+    geom_point(aes(x=Longitude, y=Latitude, colour=alt_DS, shape=sit_fly))+scale_color_viridis("Altitude (m) from\ndynamic soaring\ncalibrated altimeters")
   
-  
+   print(p2/p2.5/p3)
+   
+   cat("\n\n\\pagebreak\n")
             
-  print(p2)
-  print(p2.5)
-  print(p3)
-  
-  #p1<-ggplot(data=dat[dat$burstID==i,])+
-  #geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
-  #labs(x="Longitude", y="Latitude", colour="   pressure")
-  #{plot_gg(p1, height=4, width=8, pointcontract = 0.7);render_camera(theta = 10, phi = 70);render_snapshot()}
-  
-  print(i)
-  print(burst_summary%>%filter(burstID==i))
+  #print(p2)
+  #print(p2.5)
+  #print(p3)
    
 }
+} #close j loop
 ```
 
 
