@@ -14,46 +14,83 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r}
+```{r, echo=F, fig.width=9, fig.height=5,}
 library(ggplot2)
 library(dplyr)
 library(tidyr)
 library(patchwork)
 library(lubridate)
 library(viridis)
+library(oceanwaves)
 
-setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
+
+setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment")
 
 # read data
 
-dat<-read.csv("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment/first_two_weeks/albatross_data_121223_to_020124.csv", h=T, sep=";")
-
-dat$burstID=as.numeric(as.factor(paste(dat$product_sn, dat$latitude, dat$longitude, dat$heading)))
-
-id_l<-data.frame(table(dat$burstID))
-table(id_l$Freq) # remove few small IDs
-
-dat<-dat[dat$burstID%in% id_l[id_l$Freq==300,]$Var1,]
-
-dat$timestamp2<-lubridate::ymd_hms("2023-12-13 06:04:01")
-
-for(i in unique(dat$burstID))
+dat<-NULL
+for(i in list.files("05mar_datapull"))
 {
-  dat[dat$burstID==i,]$timestamp2<-lubridate::ymd_hms(
-    paste(dat[dat$burstID==i,]$timestamp,rep(rev(c("00","01","02","03", "04", "05", "06", "07", "08", "09", 10:59)), 5), sep=":"), tz="UTC")
+d1<-read.csv(paste0("05mar_datapull/", i), skip=1)
+dat<-rbind(dat, data.frame(d1, ID=substr(i, 3, 6)))
 }
 
-# at present data is arranged as recieved in descending time order
+dat<-dat%>%dplyr::select(-c('Number.of.SVs','Number.of.SVs', 'Altitude..metres.',
+                            'Sensor.Temperature', 'Time.Underwater', 'Activity.Count'))
+#assign species
+dat$sp<-"BUAL"
+dat[dat$ID %in%c(1183,1200, 1196, 1316, 1318),]$sp<-"SHAL"
 
-#dat_sf<-st_as_sf(dat, coords=c("longitude", "latitude"), crs=4326
-#tm_shape(dat_sf%>%filter(timestamp2> lubridate::ymd_hms("2023-12-19 22:00:00") & timestamp2< lubridate::ymd_hms("2023-12-21 #01:00:00")))+tm_dots(col=as.character("product_sn"))
+#convert datetime to local
+dat$UTC.Timestamp<-ymd_hms(dat$UTC.Timestamp, tz="UTC")
+dat$DateTime_AEDT<-with_tz(dat$UTC.Timestamp, tz="Australia/Sydney")
+#remove some duplicates
+dat<-dat[-which(duplicated(paste(dat$ID, dat$DateTime_AEDT))),]
 
-dat<-dat%>%filter(timestamp2>lubridate::ymd_hms("2023-12-20 01:00:00")) #filter out pre deployment
-dat<-dat%>%filter(product_sn!='1202') # filter out failed logger
 
-dat$timestamp2<-lubridate::with_tz(dat$timestamp2, "Australia/Sydney")
+# remove pre-deployment data - manually specify for each device
+dat<-dat%>%filter(!(ID=="1183" & DateTime_AEDT<ymd_hms("2023-12-20 13:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1200" & DateTime_AEDT<ymd_hms("2023-12-20 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1196" & DateTime_AEDT<ymd_hms("2023-12-20 15:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1313" & DateTime_AEDT<ymd_hms("2024-02-21 11:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1321" & DateTime_AEDT<ymd_hms("2024-02-21 12:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1314" & DateTime_AEDT<ymd_hms("2024-02-21 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1315" & DateTime_AEDT<ymd_hms("2024-02-21 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1316" & DateTime_AEDT<ymd_hms("2024-02-22 10:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1318" & DateTime_AEDT<ymd_hms("2024-02-22 11:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1322" & DateTime_AEDT<ymd_hms("2024-02-22 11:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1323" & DateTime_AEDT<ymd_hms("2024-02-22 14:00:00", tz="Australia/Sydney")))
 
-## calc flight heights, do all but only ware about T and A burst classes
+# make burst ID
+dat$burstID<-as.numeric(as.factor(paste(dat$ID, year(dat$DateTime_AEDT), month(dat$DateTime_AEDT), day(dat$DateTime_AEDT), hour(dat$DateTime_AEDT),
+                                        dat$Latitude, dat$Longitude, dat$Heading, dat$Battery.Voltage)))
+table(table(dat$burstID))
+
+id_l<-data.frame(table(dat$burstID))
+dat<-dat[dat$burstID%in% id_l[id_l$Freq>60,]$Var1,] # remove bursts less than 60 seconds
+
+
+zc_summary<-data.frame(dat%>%group_by(sp, ID, burstID)%>%summarise(speed=first(Speed..km.h.), temp=first(Device.Temperature)),
+                       Hsig=NA,Hmean=NA, Tmean=NA, Tsig=NA)
+
+for (i in unique(dat$burstID))
+{
+  possibleError <-tryCatch(
+    waveStatsZC(dat[dat$burstID==i,]$Pressure, 1,),
+    error=function(e) e)
+  if(!inherits(possibleError, "error")){
+  d1<-waveStatsZC(dat[dat$burstID==i,]$Pressure, 1,)
+  zc_summary[zc_summary$burstID==i,]$Hsig=d1$Hsig
+  zc_summary[zc_summary$burstID==i,]$Hmean=d1$Hmean
+  zc_summary[zc_summary$burstID==i,]$Tmean=d1$Tmean
+  zc_summary[zc_summary$burstID==i,]$Tsig=d1$Tsig
+  }else{next}
+}
+# 11/03 - only 11 NAs
+
+bIDz<-zc_summary%>%ungroup()%>%arrange(speed, Hmean)%>%pull(burstID)
+
+#### Calculation of flight height using dynamic soaring method ####
 
 # barometric formula (Berberan Santos et al. 1997)
 #h=((k*T)/(m*g))*ln(p/p0)
@@ -61,56 +98,32 @@ k=8.31432
 m=0.0289644
 g=9.80665
 
-# for p0 per burst we want to identify pressure level at sea level, we can assume waves
-# so finding upper 95th? quantile could represent burst mean sea level, negative values 
-# in resultant flight height would be wave troughs. A more precise method would find the 
-# max pressure point of each osscillation (after a short window smooth to remove error),
-# and then take the mean of these points, you could even run a gam through these if we
-# expect local pressure changes to change over the burst - possible on transiting bursts.
-# Question we need answered if if birds always meet the surface during their soaring oscillation
-# Anchoring each oscillaition to the sea surface removes negative values but probably 
-# overestimates.. hmm also look at a small moving window to clean up 
-
-dat$index<-1:nrow(dat)
 dat$p0<-0
-dat$p0_orig<-0
-
-dat$pres_alt<-NA
+dat$alt_DS<-NA
 for (i in unique(dat$burstID))
 {
-   # original method - 95% upper quantile of pressure to set p0 for entire burst
-  dat[dat$burstID==i,]$p0_orig<-quantile(dat[dat$burstID==i,]$pressure , probs=0.95)
-  
-  #split burst in 5 (= 1 minute sub-bursts) then 
-  # get 95% quantile of sub-burst pressure to use as p0 for sub burst
-  
-  splitter<-data.frame(indy=dat[dat$burstID==i,]$index, split=cut(dat[dat$burstID==i,]$index, 5))
-  
-  for(j in unique(splitter$split))
-  {
-    dat[dat$index%in%splitter[splitter$split==j,]$indy,]$p0<-
-      quantile(dat[dat$index%in%splitter[splitter$split==j,]$indy,]$pressure , probs=0.75) # select quantile
-  }
-  # temp model
-  mod_dat<-dat[dat$burstID==i,]
-  mod_dat$pres_above<-ifelse(mod_dat$pressure >mod_dat$p0, mod_dat$pressure , NA)
-  m1<-loess(pres_above~index, data=mod_dat, span=0.75, control = loess.control(surface = "direct")) 
-  mod_dat$pred<-predict(m1, mod_dat)
-  m2<-loess(pres_above~index, data=mod_dat, span=0.5, control = loess.control(surface = "direct")) 
-  mod_dat$pred2<-predict(m2, mod_dat)
-  
-  dat[dat$burstID==i,]$pres_alt<-(-1*  # *-1 flips negative/positive values
-                          ((k*(mod_dat$temperature+273.15))/(m*g))*log(dat[dat$burstID==i,]$pressure /dat[dat$burstID==i,]$p0_orig)) # using p0_orig as p0
+  # original method - 95% upper quantile of pressure to set p0 for entire burst
+  dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$Pressure, probs=0.95)
+}
 
-  p2<-ggplot(data=mod_dat)+geom_line(aes(x=timestamp2, y=pressure , group=1))+
-    geom_point(aes(x=timestamp2, y=pressure ), size=1)+geom_line(aes(x=timestamp2, y=p0_orig), col='red')+
-    geom_line(aes(x=timestamp2, y=pred), col='green')+
-    geom_line(aes(x=timestamp2, y=pred2), col='blue')+scale_y_reverse()+
-    scale_x_datetime(date_breaks="min")+
-    labs(title =paste("logger", unique(mod_dat$product_sn), "burstID", i ,"speed", unique( mod_dat$speed_kmh), "km/h"))
+dat$alt_DS<-(-1*  # *-1 flips negative/positive values
+               ((k*(dat$Device.Temperature+273.15))/(m*g))*log(dat$Pressure/dat$p0))
+
+for (i in bIDz)
+{
+  
+  p0z<-unique(dat[dat$burstID==i,]$p0)
+  tempz<-unique(dat[dat$burstID==i,]$Device.Temperature)
+  
+  p2<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT , y=Pressure , group=1))+
+    geom_point(aes(x=DateTime_AEDT, y=Pressure ), size=1)+geom_line(aes(x=DateTime_AEDT, y=p0), col='red')+
+    scale_x_datetime(date_breaks='1 min', date_labels = '%y/%m/%d %H:%M')+
+    scale_y_reverse(name="Pressue (mb)", sec.axis = sec_axis(~(-1* ((k*(tempz+273.15))/(m*g))*log(./p0z)), name="Altitude (m)"))+
+    labs(title =paste0("logger ", unique(dat[dat$burstID==i,]$ID), "; sp ", unique(dat[dat$burstID==i,]$sp),"; burstID ", i ,"; speed ", unique( dat[dat$burstID==i,]$Speed..km.h.), "km/h; temp ", unique(dat[dat$burstID==i,]$Device.Temperature) ))
+  
        
   print(p2)
-   
+  print(zc_summary[zc_summary$burstID==i,])
 }
 ```
 
