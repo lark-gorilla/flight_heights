@@ -232,19 +232,7 @@ dat$alt_SO<-(-1*  # *-1 flips negative/positive values
 #### ^^^ ####
 
 
-#### correlation and cycle detection between methods - not used in the end ####
-
-dat%>%filter(class%in%c("T", "L"))%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
-  summarise(cor=cor.test(pres_pa, alt_gps)$estimate, pval=cor.test(pres_pa, alt_gps)$p.value)
-
-corz<-dat%>%filter(class%in%c("T", "L"))%>%group_by(burstID)%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%
-  summarise(cor=cor.test(alt_DS, alt_gps)$estimate, pval=cor.test(alt_DS, alt_gps)$p.value,
-            pres_cor=cor.test(pres_pa, alt_gps)$estimate, pres_pval=cor.test(pres_pa, alt_gps)$p.value )
-
-length(which(corz$pres_pval<0.05))
-nrow(corz)
-length(which(corz$pres_pval<0.05 & corz$pres_cor>0))
-summary(corz[corz$pres_pval<0.05 & corz$pres_cor<0,]$pres_cor)
+#### Zero-crossing analysis  ####
 
 # Using Zero-crossing method in oceanwaves package
 
