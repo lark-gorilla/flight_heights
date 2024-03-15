@@ -302,12 +302,12 @@ render_snapshot("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flig
 
 p2<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
-geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='green')+
-  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='green')+
+geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='#00A9FF')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='#00A9FF')+
   labs(y="Altitude (m)")+
   geom_hline(yintercept=0, linetype='dotted')+theme_bw()+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
-  scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2))+
+  scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2), minor_breaks = NULL)+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
 library(figpatch)
@@ -327,8 +327,8 @@ p1/p1.6/p2
 
 ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
-  geom_line(aes(x=index, y=alt_gps), colour="green", alpha=0.5)+
-  geom_line(aes(x=index, y=alt_SO), colour='orange', alpha=0.5)+
+  geom_line(aes(x=index, y=alt_gps), colour='#00A9FF', alpha=0.5)+
+  geom_line(aes(x=index, y=alt_SO), colour='#E68613', alpha=0.5)+
   facet_wrap(~ID, nrow=3, scales='free')+labs(y='Altitude (m)', x='Index') # ok looks good
 
 # make fig
@@ -342,15 +342,21 @@ p1<-ggplot(data=fig_dat)+
             aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='lightgrey', alpha=0.5)+
   geom_rect(xmin=4304, xmax=4614 , ymin=-10, ymax=25,colour='purple',fill=NA)+
   geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
-  geom_line(aes(x=index2, y=alt_gps), col="green", alpha=0.5, linewidth=0.1)+
-  geom_line(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.5, linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.5, linewidth=0.1)+
   geom_point(aes(x=index2, y=alt_DS), colour='black', size=0.5)+
-  geom_point(aes(x=index2, y=alt_gps), col="green", alpha=0.5, size=0.5)+
-  geom_point(aes(x=index2, y=alt_SO), colour='orange', alpha=0.5, size=0.5)+
+  geom_point(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.5, size=0.5)+
+  geom_point(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.5, size=0.5)+
   geom_text(aes(x=130, y=24), label="a)", size=8)+
   scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25),  expand = c(0,0))+labs(y='Altitude (m)', x='5 minute burst index')+
-  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i),  expand = c(0,0))+
-  theme_bw()+ theme( axis.text=element_text(size=12),axis.title=element_text(size=14))
+  scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i), 
+                     labels=c("               Sit1", "               Sit2", "               Fly1", "               Fly2",
+                              "               Fly3", "                 Land1", "               Fly4", "               Fly5",
+                              "               Sit3", "               Sit4", "               Sit5", "                 Land2",
+                              "                 Land3","               Sit6", "               Land4", "               Fly7",
+                              "          Fly8"),expand = c(0,0))+
+  theme_bw()+ theme( axis.text=element_text(size=12),axis.title=element_text(size=14)) 
+# may need to tweak labels but OK for now
 
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_hline(aes(yintercept=8), linetype='dotted')+
@@ -365,7 +371,7 @@ breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
 theme_bw() +
   geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=18), label="b)", size=8)+
   theme(legend.position= c(0.8,0.8), legend.text=element_text(size=12), axis.text=element_text(size=12),axis.title=element_text(size=14),
-        plot.background = element_rect(color = "purple", size = 1))+
+        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_rect(colour = "black"))+
   scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
 #### ^^ ####
   
@@ -503,10 +509,11 @@ dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitud
                                     min=min(Altitude), max=max(Altitude),
                                     q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75))
 # make plot
-cols <- scales::hue_pal()(3)
-cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.5),
-        grDevices::adjustcolor(cols[2], alpha.f = 0.5),
-        grDevices::adjustcolor(cols[3], alpha.f = 0.5))
+cols <- c("#000000",'#00A9FF','#E68613')
+
+cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
+        grDevices::adjustcolor(cols[2], alpha.f = 0.75),
+        grDevices::adjustcolor(cols[3], alpha.f = 0.75))
 
 ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size=2)+
   theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(breaks=seq(-60,60,2))+
