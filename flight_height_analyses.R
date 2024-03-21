@@ -11,6 +11,10 @@ library(nlme)
 library(emmeans)
 library(performance)
 library(oceanwaves)
+library(gridExtra)
+library(figpatch)
+library(e1071)
+library(fitdistrplus)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -310,7 +314,6 @@ geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='#00A9FF')+
   scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2), minor_breaks = NULL)+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
-library(figpatch)
 p1.6 <- fig("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot_zoom.png")
   
 wrap_plots(p1, p1.6, p2, nrow=3)
@@ -327,8 +330,8 @@ p1/p1.6/p2
 
 ggplot(data=dat%>%group_by(ID)%>%mutate(index=1:n())%>%ungroup())+
   geom_line(aes(x=index, y=alt_DS), colour='black')+
-  geom_line(aes(x=index, y=alt_gps), colour='#00A9FF', alpha=0.5)+
-  geom_line(aes(x=index, y=alt_SO), colour='#E68613', alpha=0.5)+
+  geom_line(aes(x=index, y=alt_gps), colour='#00A9FF', alpha=0.75)+
+  geom_line(aes(x=index, y=alt_SO), colour='#E68613', alpha=0.75)+
   facet_wrap(~ID, nrow=3, scales='free')+labs(y='Altitude (m)', x='Index') # ok looks good
 
 # make fig
@@ -342,11 +345,11 @@ p1<-ggplot(data=fig_dat)+
             aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='lightgrey', alpha=0.5)+
   geom_rect(xmin=4304, xmax=4614 , ymin=-10, ymax=25,colour='purple',fill=NA)+
   geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
-  geom_line(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.5, linewidth=0.1)+
-  geom_line(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.5, linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.75, linewidth=0.1)+
+  geom_line(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.75, linewidth=0.1)+
   geom_point(aes(x=index2, y=alt_DS), colour='black', size=0.5)+
-  geom_point(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.5, size=0.5)+
-  geom_point(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.5, size=0.5)+
+  geom_point(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.75, size=0.5)+
+  geom_point(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.75, size=0.5)+
   geom_text(aes(x=130, y=24), label="a)", size=8)+
   scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25),  expand = c(0,0))+labs(y='Altitude (m)', x='5 minute burst index')+
   scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i), 
@@ -364,14 +367,15 @@ p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='grey', alpha=0.3)+
 geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
 geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
-  scale_y_continuous(name='Ocean satellite date calibrated altitude (m)', breaks=seq(0, 20, 2),
-  sec.axis = sec_axis(~.-8, name="Dynamic soaring calibrated altitude (m)",
+  scale_y_continuous(name='Sitting satellite calibrated altitude (m)', breaks=seq(0, 20, 2),
+  sec.axis = sec_axis(~.-8, name="Dynamic soaring (flying subset)\ncalibrated altitude (m)",
 breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)',  expand = c(0,0))+
 theme_bw() +
   geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=18), label="b)", size=8)+
   theme(legend.position= c(0.8,0.8), legend.text=element_text(size=12), axis.text=element_text(size=12),axis.title=element_text(size=14),
-        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_rect(colour = "black"))+
+        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_rect(colour = "black"),
+        axis.title.y.right=element_text(hjust=0.1))+
   scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
 #### ^^ ####
   
@@ -480,7 +484,7 @@ p4<-ggplot()+
 
 # Make mega plot!!
 
-areas <- c(area(1, 1, 1, 3),area(2, 1, 2, 2), area(2, 3, 2,3))
+areas <- c(patchwork::area(1, 1, 1, 3),patchwork::area(2, 1, 2, 2), patchwork::area(2, 3, 2,3))
 p1 + p2 + (p3/p4) + plot_layout(design = areas)
 
 #### ^^ ####
@@ -507,7 +511,7 @@ dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS,
 #summarise
 dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
                                     min=min(Altitude), max=max(Altitude),
-                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75))
+                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75), skew=skewness(Altitude))
 # make plot
 cols <- c("#000000",'#00A9FF','#E68613')
 
@@ -542,16 +546,50 @@ plot(em1, comparisons = TRUE)
 
 
 
-#### Make DS fig and prop time in 1m band fig and table ####
+#### Make prop time in 1m band fig and table ####
+
+min(dat_flying$alt_DS) # get offset to make all vals above zero for lognormal and Gamma
+#4.166551
+
+lognormal.SH = fitdistr(dat_flying$alt_DS+4.166551, "lognormal")
+lognormal.SH.Fit = dlnorm(seq(0,30,0.1), lognormal.SH$estimate[1], lognormal.SH$estimate[2])
+plot(seq(0,30,0.1), lognormal.SH.Fit, type = "l", ylab = "Prop. at height", xlab = "Height above Sea-level")
+
+# dont do this, do own bootstrap with sample and refit and predict the dist. 200 times (apparently) can alos use these to reoport 
+#ucl and lcl in the table on the paper
+
+set.seed(123)
+lnorm.boot = data.frame(matrix(data = 0, nrow = 3001, ncol = 200))
+for(i in 1:200){
+  balanced_ID_alts<-c(sample(dat_flying[dat_flying$ID==8611649,]$alt_DS, round(nrow(dat_flying)/3),replace=TRUE),
+                 sample(dat_flying[dat_flying$ID==8611854,]$alt_DS, round(nrow(dat_flying)/3),replace=TRUE),
+                 sample(dat_flying[dat_flying$ID==41490936,]$alt_DS, round(nrow(dat_flying)/3),replace=TRUE))
+  lognormal.SH.boot = fitdistr(balanced_ID_alts+4.166551, "lognormal")
+  lnorm.boot[,i] = dlnorm(seq(0,300,0.1), lognormal.SH.boot$estimate[1], lognormal.SH.boot$estimate[2])
+}
+
+lnorm.boot[,201]<-rowMeans(lnorm.boot)
+lnorm.boot[,202]<-apply(lnorm.boot[,1:200], 1,  sd)
+lnorm.boot[,203]<-lnorm.boot[,201]+((lnorm.boot[,202]/sqrt(200))*1.96) # UCI (SD converted to SE)
+lnorm.boot[,204]<-lnorm.boot[,201]-((lnorm.boot[,202]/sqrt(200))*1.96) # UCI (SD converted to SE)
+
+dimnames(lnorm.boot)[[1]]<-(seq(0,300,0.1)-4.166551)+1.15
+dimnames(lnorm.boot)[[2]]<-c(paste0('bootId_', 1:200), "mean", "sd", "uci", "lci")
+
+# sd col now then get 95 CI or 97.5 actually
+
 
 p1<-ggplot()+
   geom_vline(xintercept=0, colour='blue', size=1)+
   geom_vline(xintercept=10, colour='blue', size=0.5)+
   geom_vline(xintercept=20, colour='blue', size=0.5)+
-  geom_rect(aes(xmin=30, xmax=31, ymin=0, ymax=4300), fill='red', size=0.5, alpha=0.3)+
-  geom_histogram(data=dat_flying, aes(x=alt_DS),colour=1, binwidth = 1)+
-  scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 31))+
-  labs(x="Altitude (m)", y="Count of altitude datapoints")+theme_bw()+
+  geom_rect(aes(xmin=30, xmax=31, ymin=0, ymax=0.17), fill='red', size=0.5, alpha=0.3)+
+  geom_histogram(data=dat_flying, aes(x=alt_DS+1.15, after_stat(density)), fill='grey', colour='darkgrey', binwidth = 1)+
+  geom_line(data=data.frame(ht=(seq(0,30,0.1)-4.166551)+1.15, disty=lognormal.SH.Fit), aes(x=ht, y=disty), size=1)+
+  geom_line(data=data.frame(ht=(seq(0,30,0.1)-4.166551)+1.15, disty=lnorm.boot[1:301, "mean"]), aes(x=ht, y=disty), size=1, col='green')+
+  scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 31), expand = c(0,0))+
+  scale_y_continuous(expand = c(0,0))+
+  labs(x="Height above sea level (m)", y="Proportion at height")+theme_classic()+
   theme(axis.text=element_text(size=12),
         axis.title=element_text(size=14))
 
@@ -565,7 +603,6 @@ prop_t$Altitude=c("<1m", "1-2m",   "2-3m",   "3-4m",   "4-5m",   "5-6m",   "6-7m
 "10-11m", "11-12m", "12-13m", "13-14m", "14-15m", "15-16m", "16-17m", "17-18m", "18-19m", "19-20m", "20-21m", "21-22m", "22-23m", "23-24m")
 sum(prop_t$Proportion)
 
-library(gridExtra)
 p1 + gridExtra::tableGrob(prop_t[c('Altitude', 'Proportion')], row=NULL)
 
 #### ^^ ####
