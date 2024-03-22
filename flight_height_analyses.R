@@ -558,6 +558,7 @@ plot(seq(0,30,0.1), lognormal.SH.Fit, type = "l", ylab = "Prop. at height", xlab
 # dont do this, do own bootstrap with sample and refit and predict the dist. 200 times (apparently) can alos use these to reoport 
 #ucl and lcl in the table on the paper
 
+
 set.seed(123)
 lnorm.boot = data.frame(matrix(data = 0, nrow = 3001, ncol = 200))
 for(i in 1:200){
@@ -569,15 +570,14 @@ for(i in 1:200){
 }
 
 lnorm.boot[,201]<-rowMeans(lnorm.boot)
-lnorm.boot[,202]<-apply(lnorm.boot[,1:200], 1,  sd)
-lnorm.boot[,203]<-lnorm.boot[,201]+((lnorm.boot[,202]/sqrt(200))*1.96) # UCI (SD converted to SE)
-lnorm.boot[,204]<-lnorm.boot[,201]-((lnorm.boot[,202]/sqrt(200))*1.96) # UCI (SD converted to SE)
 
 dimnames(lnorm.boot)[[1]]<-(seq(0,300,0.1)-4.166551)+1.15
-dimnames(lnorm.boot)[[2]]<-c(paste0('bootId_', 1:200), "mean", "sd", "uci", "lci")
+dimnames(lnorm.boot)[[2]]<-c(paste0('bootId_', 1:200), "mean")
 
 # sd col now then get 95 CI or 97.5 actually
 
+boot_for_plot<-data.frame(ht=as.numeric(row.names(lnorm.boot[as.numeric(row.names(lnorm.boot))<max(dat_flying$alt_DS+1.15),])),
+                             prop = lnorm.boot[as.numeric(row.names(lnorm.boot))<max(dat_flying$alt_DS+1.15),"mean"])
 
 p1<-ggplot()+
   geom_vline(xintercept=0, colour='blue', size=1)+
@@ -585,25 +585,45 @@ p1<-ggplot()+
   geom_vline(xintercept=20, colour='blue', size=0.5)+
   geom_rect(aes(xmin=30, xmax=31, ymin=0, ymax=0.17), fill='red', size=0.5, alpha=0.3)+
   geom_histogram(data=dat_flying, aes(x=alt_DS+1.15, after_stat(density)), fill='grey', colour='darkgrey', binwidth = 1)+
-  geom_line(data=data.frame(ht=(seq(0,30,0.1)-4.166551)+1.15, disty=lognormal.SH.Fit), aes(x=ht, y=disty), size=1)+
-  geom_line(data=data.frame(ht=(seq(0,30,0.1)-4.166551)+1.15, disty=lnorm.boot[1:301, "mean"]), aes(x=ht, y=disty), size=1, col='green')+
+  geom_line(data=boot_for_plot, aes(x=ht, y=prop), size=1)+
   scale_x_continuous(breaks=seq(-5, 50, 5),minor_breaks=seq(-5, 50, 1), limits=c(-5, 31), expand = c(0,0))+
   scale_y_continuous(expand = c(0,0))+
   labs(x="Height above sea level (m)", y="Proportion at height")+theme_classic()+
   theme(axis.text=element_text(size=12),
         axis.title=element_text(size=14))
 
-prop_t<-data.frame(cut(dat_flying$alt_DS, breaks = c(-5, 1:24)) %>% table)%>%
-  mutate(Proportion=Freq/length(dat_flying$alt_DS))
+
+# make proportion table, per 1m
+propt<-lnorm.boot%>%mutate(ht_1m=cut(as.numeric(row.names(lnorm.boot)), breaks = c(-5, 1:297)))%>%group_by(ht_1m)%>%summarise_all(sum)
+
+propt[,2:202]<-propt[,2:202]/10
+
+propt[,203]<-apply(propt[,2:201], 1,  function(x){confint(lm(x~1), level=0.95)[1]})
+propt[,204]<-apply(propt[,2:201], 1,  function(x){confint(lm(x~1), level=0.95)[2]})
+colnames(propt)[203:204]<-c("lci", "uci")
+
+propt$ht_1m<-gsub( ",", "-",propt$ht_1m)
+
+#write out
+#write.csv(propt, "C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/outputs/flight_height_boots.csv", quote=F, row.names=F)
+
+# make table for plot up to 25m
+
+table_dat<-propt[1:25, c("ht_1m","mean", "lci", "uci")]
+
 
 specify_decimal <- function(x, k) trimws(format(round(x, k), nsmall=k))
 
-prop_t$Proportion<-specify_decimal(prop_t$Proportion, 5)
-prop_t$Altitude=c("<1m", "1-2m",   "2-3m",   "3-4m",   "4-5m",   "5-6m",   "6-7m",   "7-8m",   "8-9m",   "9-10m",
-"10-11m", "11-12m", "12-13m", "13-14m", "14-15m", "15-16m", "16-17m", "17-18m", "18-19m", "19-20m", "20-21m", "21-22m", "22-23m", "23-24m")
-sum(prop_t$Proportion)
+table_dat$mean<-specify_decimal(table_dat$mean, 5)
+table_dat$lci<-specify_decimal(table_dat$lci, 5)
+table_dat$uci<-specify_decimal(table_dat$uci, 5)
+table_dat$Altitude=c("<1m", "1-2m",   "2-3m",   "3-4m",   "4-5m",   "5-6m",   "6-7m",   "7-8m",   "8-9m",   "9-10m",
+"10-11m", "11-12m", "12-13m", "13-14m", "14-15m", "15-16m", "16-17m", "17-18m", "18-19m",
+"19-20m", "20-21m", "21-22m", "22-23m", "23-24m", "24-25m")
+names(table_dat)[2:4]<-c("Proportion", "LCI", "UCL")
+sum(as.numeric(table_dat$Proportion))
 
-p1 + gridExtra::tableGrob(prop_t[c('Altitude', 'Proportion')], row=NULL)
+p1 + gridExtra::tableGrob(table_dat[c('Altitude', 'Proportion', "LCI", "UCL")], row=NULL)
 
 #### ^^ ####
 
