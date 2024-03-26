@@ -527,24 +527,25 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   scale_colour_manual("Altitude estimation method", values=cols.alpha, labels=c("Dynamic soaring calibrated altimeter", 
   "GPS Altitude", "Sitting satellite calibrated altimeter"))+labs(x="Altitude (m)", y="Density")
 
-#m1_altD<-glmer(Altitude~method+(1|burstID:Logger), data=dat_comp, family=Gamma(link='log')) 
-#initially tried gamma with +1000 added to alt, but distirbution more similar to normal so went with LMM 
+# Now run stats on difference data to keep things normal
 
-m1_altD<-lmer(Altitude~method+(1|burstID:Logger), data=dat_comp) # need to formulate with nlme
+dat_diff<-rbind(data.frame(method='Dynamic soaring - GPS', Altitude=dat_flying$alt_DS-dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
+                data.frame(method='Dynamic soaring - Satellite ocean', Altitude=dat_flying$alt_DS-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
+                data.frame(method='GPS - Satellite ocean', Altitude=dat_flying$alt_gps-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
 
-m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_comp)
-m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_comp)
-AIC(m1, m2)
-#resid_panel(m1)
+
+m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_diff)
+boxplot(residuals(m1, type='pearson')~dat_diff$method)
+m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_diff)
+
+AIC(m1, m2) # logger ID as RE not as good
+resid_panel(m1)
 summary(m1)
 
 anova(m1)
 em1<-emmeans(m1, specs='method')
 em1
-pairs(em1)
-plot(em1, comparisons = TRUE)
-
-
+test(em1, adjust="bonferroni")
 
 #### Make prop time in 1m band fig and table ####
 
