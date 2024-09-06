@@ -90,37 +90,6 @@ dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
 # all flights in day!
 #### ^^ ####
 
-#### Detect loops NOt used in final analyses https://stackoverflow.com/questions/73404664/detecting-looping-behavior-in-track-data ####
-
-sf_use_s2(FALSE)# needs to be set otherwise get errors from overlapping vertices in polys
-
-dat$loop=F
-
-for(i in unique(dat$burstID))
-{
-  track_dat <- dat[dat$burstID==i,]%>%
-  st_as_sf(coords = c("Longitude","Latitude"), crs = 4326)
-
-track_ls<-track_dat%>%st_combine() |> st_cast("LINESTRING")
-
-# could use this code to remove either v small or large loops track_poly_df <- 
-#track_polys |>  st_as_sf(crs = 4326) |> st_set_geometry("geometry") |> 
-#  mutate( size = st_area(geometry) ) |> arrange(desc(size)) 
-
-track_polys <- st_intersection(track_ls,track_ls) |>st_polygonize() |> st_cast() %>%st_union()
-
-int1<-st_intersects(track_dat, track_polys, sparse=F)
-
-if(!TRUE %in% int1){next} # if not loops skip to next
-
-dat[dat$burstID==i,][unlist(int1),]$loop<-"T"
-}
-
-# finally set all sitting points that might be looped over as not in the loop
-
-#ggplot()+geom_sf(data=track_polys, fill='red')+geom_sf(data=track_ls)+geom_sf(data=track_dat[unlist(int1),], col='green', aes(shape=sit_fly))
-
-#### ^^ ####
 
 #### Calculation of flight height using dynamic soaring method and correction to GPS ####
 
@@ -394,11 +363,7 @@ ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+geom_line(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+  
   facet_wrap(~burstID, scales="free")
 
-
-
-# ok nice, so does variance increase with wave_height
-# very rough calc, need to tweak variance/mean etc for some dodgy bursts
-# Significant wave height can be shown to correspond to the average wave height of the top one-third highest waves
+# FYI Significant wave height = the average wave height of the top one-third highest waves
 
 wave_temp<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(w_height=mean(wave_height),
                                                         w_period=mean(wave_period)) 
