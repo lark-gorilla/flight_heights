@@ -90,7 +90,6 @@ dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
 # all flights in day!
 #### ^^ ####
 
-
 #### Calculation of flight height using dynamic soaring method and correction to GPS ####
 
 # barometric formula (Berberan Santos et al. 1997)
@@ -116,6 +115,56 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
                                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
 
 #### ^^^ ####
+
+#### Sensitivity analysis of dynamic soaring p0 threshold using wave heights ####
+dat_sit<-dat%>%filter(class=='S')
+
+for (j in seq(0.7, 1, 0.01))
+{
+dat_sit$alt_DS<-NA
+for (i in unique(dat_sit$burstID))
+{
+  # original method - 95% upper quantile of pressure to set p0 for entire burst
+  dat_sit[dat_sit$burstID==i,]$p0<-quantile(dat_sit[dat_sit$burstID==i,]$pres_pa, probs=j)
+}
+
+dat_sit$alt_DS<-(-1*  # *-1 flips negative/positive values
+               ((k*(dat_sit$temp+273.15))/(m*g))*log(dat_sit$pres_pa/dat_sit$p0))
+
+names(dat_sit)[which(names(dat_sit)=="alt_DS")]<-paste0("alt_DS", j)
+}
+
+# Using Zero-crossing method in oceanwaves package
+zc_summary<-NULL
+
+for(i in unique(dat_sit$burstID))
+{
+  tout<-data.frame(burstID=i, DSp0=seq(0.7, 1, 0.01), Hsig=NA)
+   
+  for (j in names(dat_sit)[54:84])
+  {
+  d1<-waveStatsZC(dat_sit[dat_sit$burstID==i, j], 1,)
+  tout[which(tout$DSp0==substr(j, 7, nchar(j))),]$Hsig<-d1$Hsig
+  }
+  zc_summary<-rbind(zc_summary, tout)
+}
+  
+  possibleError <-tryCatch(
+    waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,),
+    error=function(e) e)
+  
+  if(!inherits(possibleError, "error")){
+    g1<-waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,) 
+    tout$gps_hsig=g1$Hsig
+    tout$gps_hmean=g1$Hmean
+    tout$gps_tmean=g1$Tmean
+    tout$gps_tsig=g1$Tsig
+  }else{}
+  
+  zc_summary<-rbind(zc_summary, tout)
+}
+
+#### ^^ ####
 
 #### Calculation of flight height using satellite ocean data (Johnston et al 2023) + 9m GPS offset (final line of code) ####
 
