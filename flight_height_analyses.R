@@ -157,6 +157,9 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 
 # Ok use sitting points 
 
+dat<-dat%>%group_by(burstID)%>%mutate(mean_sea_level_pressure =mean(mean_sea_level_pressure ,na.rm = T))%>%
+  ungroup()%>%as.data.frame() # average satellite pressure dat per burst
+
 #get sitting pressure diff 
 dat$sat_sit_pdiff<-NA
 dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sat_sit_pdiff<-
