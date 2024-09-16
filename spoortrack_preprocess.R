@@ -49,6 +49,9 @@ dat$burstID<-as.numeric(as.factor(paste(dat$ID, year(dat$DateTime_AEDT), month(d
                                         dat$Latitude, dat$Longitude, dat$Heading, dat$Battery.Voltage)))
 table(table(dat$burstID))
 
+# write out compiled coord file
+#write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_05mar_coords.csv", quote=F, row.names=F)
+
 id_l<-data.frame(table(dat$burstID))
 dat<-dat[dat$burstID%in% id_l[id_l$Freq>60,]$Var1,] # remove bursts less than 60 secs 
 
