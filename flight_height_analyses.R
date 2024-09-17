@@ -468,8 +468,18 @@ dat<-dat %>% group_by(burstID) %>%
 
 dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
 
+# compare p0 values between dynamic soaring and sitting method
+dat_fly_first<-dat_flying%>%group_by(burstID)%>%summarise_all(first)
+boxplot(dat_fly_first$p0,dat_fly_first$p0_SO)
+summary(dat_fly_first$p0);summary(dat_fly_first$p0_SO)
+t.test(dat_fly_first$p0_SO,dat_fly_first$p0, paired=T)
+mean(dat_fly_first$p0_SO); sd(dat_fly_first$p0_SO)
+mean(dat_fly_first$p0); sd(dat_fly_first$p0)
+# end of p0 comparison
+
 cor.test(dat_flying$alt_DS, dat_flying$alt_gps)
 ggplot(data=dat_flying)+geom_point(aes(x=alt_gps, y=alt_DS))
+
 
 dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
                 data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
