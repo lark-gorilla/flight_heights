@@ -15,6 +15,7 @@ library(gridExtra)
 library(figpatch)
 library(e1071)
 library(fitdistrplus)
+library(car)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -256,6 +257,11 @@ na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summ
 t.test(zc_summary$ds_hmean, zc_summary$gps_hmean, paired=T)
 t.test(zc_summary$ds_tmean, zc_summary$gps_tmean, paired=T)
 
+# do Levene Test to test for homogeneity of variance
+test_dat<-rbind(data.frame(val=zc_summary$ds_tmean, grp="ds"), data.frame(val=zc_summary$gps_tmean, grp="gps"))
+leveneTest(val ~ grp, data = test_dat)
+#var.test(zc_summary$ds_tmean, zc_summary$gps_tmean, alternative = "less")
+
 #### ^^^ ####
 
 
@@ -476,6 +482,10 @@ t.test(dat_fly_first$p0_SO,dat_fly_first$p0, paired=T)
 mean(dat_fly_first$p0_SO); sd(dat_fly_first$p0_SO)
 mean(dat_fly_first$p0); sd(dat_fly_first$p0)
 # end of p0 comparison
+
+# do Levene Test to test for homogeneity of variance (precision between GPS and DS altitudes)
+test_dat<-rbind(data.frame(val=dat_flying$alt_DS, grp="ds"), data.frame(val=dat_flying$alt_gps, grp="gps"))
+leveneTest(val ~ grp, data = test_dat)
 
 cor.test(dat_flying$alt_DS, dat_flying$alt_gps)
 ggplot(data=dat_flying)+geom_point(aes(x=alt_gps, y=alt_DS))
