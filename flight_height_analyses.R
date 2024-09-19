@@ -110,6 +110,16 @@ for (i in unique(dat$burstID))
 {
   # original method - 95% upper quantile of pressure to set p0 for entire burst
   dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
+  
+  if(unique(dat[dat$burstID==i,]$class)=="A") #separate p0 values for sitting vs flying in takeoff/landing bursts
+        {
+        dat[dat$burstID==i &dat$sit_fly=="sit",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="sit",]$pres_pa, probs=0.50)
+        dat[dat$burstID==i &dat$sit_fly=="fly",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="fly",]$pres_pa, probs=0.95)
+        }
+  if(unique(dat[dat$burstID==i,]$class)=="S") #Use 0.5 for wave height to assume mean sea level
+  {
+    dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.50)
+  }
 }
   
 dat$alt_DS<-(-1*  # *-1 flips negative/positive values
@@ -245,8 +255,8 @@ for ( i in unique(dat[dat$class%in%c("T", "L", "S"),]$burstID))
 ggplot(data=zc_summary)+geom_point(aes(x=ds_hmean, y=gps_hmean))+facet_wrap(~class, scales='free')
 ggplot(data=zc_summary)+geom_point(aes(x=ds_tmean, y=gps_tmean))+facet_wrap(~class, scales='free')
 
-na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(mean)
-na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summarise_all(sd)
+na.omit(zc_summary)%>%filter(class!='S')%>%dplyr::select(-c('burstID', 'class'))%>%summarise_all(mean)
+na.omit(zc_summary)%>%filter(class!='S')%>%dplyr::select(-c('burstID', 'class'))%>%summarise_all(sd)
 
 #ds_hsig ds_hmean ds_tmean  ds_tsig     gps_hsig gps_hmean gps_tmean gps_tsig
 #8.018721 5.369986 9.360565 14.20945    9.770262  6.538162  13.35991  22.6568
@@ -254,12 +264,16 @@ na.omit(zc_summary)%>%filter(class!='S')%>%select(-c('burstID', 'class'))%>%summ
 #ds_hsig ds_hmean ds_tmean  ds_tsig    gps_hsig gps_hmean gps_tmean gps_tsig
 #2.861487 1.870761 2.986462 5.957045    4.39308  2.583361  7.725046 20.26673
 
-t.test(zc_summary$ds_hmean, zc_summary$gps_hmean, paired=T)
-t.test(zc_summary$ds_tmean, zc_summary$gps_tmean, paired=T)
-
 # do Levene Test to test for homogeneity of variance
-test_dat<-rbind(data.frame(val=zc_summary$ds_tmean, grp="ds"), data.frame(val=zc_summary$gps_tmean, grp="gps"))
-leveneTest(val ~ grp, data = test_dat)
+test_dat<-rbind(data.frame(val=zc_summary[zc_summary$class!="S",]$ds_tmean, grp="ds"),
+                data.frame(val=zc_summary[zc_summary$class!="S",]$gps_tmean, grp="gps"))
+boxplot(val~grp, test_dat)
+
+wilcox.test(x=zc_summary[zc_summary$class!="S",]$ds_tmean, y=zc_summary[zc_summary$class!="S",]$gps_tmean,
+           paired=T, alternative = "less")
+
+# not used
+#leveneTest(val ~ grp, data = test_dat, center='mean')
 #var.test(zc_summary$ds_tmean, zc_summary$gps_tmean, alternative = "less")
 
 #### ^^^ ####
@@ -319,15 +333,11 @@ p1<-ggplot(data=fig_dat)+
             aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='darkgrey', alpha=0.5)+
   geom_rect(data=fig_dat%>%filter(class=='A')%>%group_by(burstID)%>%
               summarise(xmin=min(index2), xmax=max(index2)),
-            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='lightgrey', alpha=0.5)+
-  geom_rect(xmin=4304, xmax=4614 , ymin=-10, ymax=25,colour='purple',fill=NA)+
+            aes(xmin=xmin, xmax=xmax, ymin=-10, ymax=25),fill='khaki2', alpha=0.5)+
   geom_line(aes(x=index2, y=alt_DS), colour='black', linewidth=0.1)+
   geom_line(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.75, linewidth=0.1)+
   geom_line(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.75, linewidth=0.1)+
-  geom_point(aes(x=index2, y=alt_DS), colour='black', size=0.5)+
-  geom_point(aes(x=index2, y=alt_gps), col='#00A9FF', alpha=0.75, size=0.5)+
-  geom_point(aes(x=index2, y=alt_SO), colour='#E68613', alpha=0.75, size=0.5)+
-  geom_text(aes(x=130, y=24), label="a)", size=8)+
+  geom_text(aes(x=130, y=21), label="a)", size=8)+
   scale_y_continuous(limits=c(-10, 25), breaks=c(-10,-5,0,5,10,15,20,25),  expand = c(0,0))+labs(y='Altitude (m)', x='5 minute burst index')+
   scale_x_continuous(minor_breaks=NULL,breaks = fig_dat%>%group_by(burstID)%>%summarise(min_i=min(index2))%>%arrange(min_i)%>%pull(min_i), 
                      labels=c("               Sit1", "               Sit2", "               Fly1", "               Fly2",
@@ -335,28 +345,47 @@ p1<-ggplot(data=fig_dat)+
                               "               Sit3", "               Sit4", "               Sit5", "                 Land2",
                               "                 Land3","               Sit6", "               Land4", "               Fly7",
                               "          Fly8"),expand = c(0,0))+
-  theme_bw()+ theme( axis.text=element_text(size=12),axis.title=element_text(size=14)) 
+  theme_bw()+ theme( axis.text=element_text(size=10),axis.title=element_text(size=12))+
+  geom_rect(xmin=4310, xmax=4620 , ymin=-9.8, ymax=24.8,colour='purple',fill=NA, linewidth=1)
 # may need to tweak labels but OK for now
 
 p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
-  geom_hline(aes(yintercept=8), linetype='dotted')+
-  geom_hline(aes(yintercept=0), linetype='dotted')+
-  geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='grey', alpha=0.3)+
-geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
-geom_point(aes(x=DateTime_AEDT, y=alt_DS, colour=sit_fly))+
-  scale_y_continuous(name='Sitting satellite calibrated altitude (m)', breaks=seq(0, 20, 2),
-  sec.axis = sec_axis(~.-8, name="Dynamic soaring (flying subset)\ncalibrated altitude (m)",
-breaks=seq(0, 10, 2),labels = function(x) {ifelse(x>-1, x, "")}))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa), colour='grey', size=0.5, alpha=0.3)+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1), colour="darkgrey")+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+
+  scale_y_reverse(name='Pressure (mb) - reversed')+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)',  expand = c(0,0))+
-theme_bw() +
-  geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=18), label="b)", size=8)+
-  theme(legend.position= c(0.8,0.8), legend.text=element_text(size=12), axis.text=element_text(size=12),axis.title=element_text(size=14),
-        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_rect(colour = "black"),
-        axis.title.y.right=element_text(hjust=0.1))+
+  theme_bw() +
+  geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=102150), label="b)", size=8)+
+  theme(legend.position= c(0.8,0.7), legend.text=element_text(size=10), axis.text=element_text(size=10),axis.title=element_text(size=12),
+        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_blank(),
+        legend.background = element_blank())+
   scale_colour_manual("Behaviour", values=c("red", "blue"),labels=c("flying", "sitting"))
+
+colors <- c("alt_DS" = "black", "alt_gps" = "#00A9FF", "alt_SO" = "#E68613")
+
+p3<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
+    geom_line(aes(x=DateTime_AEDT, y=alt_DS, color="alt_DS"))+
+  geom_line(aes(x=DateTime_AEDT, y=alt_gps, color="alt_gps"))+
+  geom_line(aes(x=DateTime_AEDT, y=alt_SO, color="alt_SO"))+
+  scale_y_continuous(limits=c(-3, 18), breaks=c(seq(-3, 18, 3)),  expand = c(0,0))+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)',  expand = c(0,0))+
+  theme_bw() +
+  labs(y="Flight height (m)")+
+  geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=15), label="c)", size=8)+
+  theme(legend.position= c(0.8,0.7), legend.text=element_text(size=10), axis.text=element_text(size=10),axis.title=element_text(size=12),
+        plot.background = element_rect(color = "purple", size = 1), legend.box.background = element_blank(),
+        legend.background = element_blank())+
+  scale_colour_manual("Flight height estimator", values=colors,labels=c("alt_DS" ="Altimeters zeroed with dynamic soaring", 
+                                                                                 "alt_gps" = "GPS Altitude",
+                                                                                 "alt_SO"="Altimeters zeroed when birds sat on the water"))
+
+#make fig 4
+p1/p2/p3  
+
 #### ^^ ####
   
-#### Measuring wave height w/ altimeters and making plot 3 of 3 panel figure  ####
+#### Measuring wave height w/ altimeters and making figure 5  ####
 
 #summarise first
 dat%>%filter(class=="S"& wave_height!="NA")%>%
@@ -419,46 +448,53 @@ cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_period, y=wave_sum[wave_sum$gps_hsig
 (wp1+wp2)/(wp3+wp4)
 
 
-# for main fig
+# for main fig - not used anymore. Looks better without pred line
 w1<-lm(w_height~ds_hsig, data=wave_sum[-c(13, 17,18,32),])
 w3<-lm(w_period~ds_tmean, data=wave_sum[-c(13, 17,18,32),])
 
-new_d<-data.frame(ds_hsig=seq(0, 10, 0.2))
-new_d<-cbind(new_d, predict(w1, new_d, se.fit = T)[c('fit', 'se.fit')])
-new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
-new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
+w2<-lm(w_height~ds_hsig,data=wave_sum[wave_sum$gps_hsig<6,])
 
-p3<-ggplot()+
-  geom_point(data=wave_sum, aes(y=w_height, x=ds_hsig))+
-  geom_line(data=new_d, aes(x=ds_hsig, y=fit),colour='red', linewidth=1)+
-  geom_ribbon(data=new_d, aes(x=ds_hsig, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
+# altimeter height
+
+p4<-ggplot()+geom_point(data=wave_sum, aes(y=w_height, x=ds_hsig))+
+  scale_x_continuous(limits=c(1, 9), breaks=1:9, expand = c(0,0))+
+  scale_y_continuous(limits=c(1, 4), expand = c(0,0))+
+  labs(x='Wave height from altimeters (m)',y='Wave height from satellite (m)', size=4)+
+  geom_text(aes(x=6.8, y=1.25), label=expression(italic(r)*" = "*"0.58, "* italic(p) < 0.001), size=4)+
   theme_bw()+
-  scale_x_continuous(limits=c(0, 9), breaks=0:9, expand = c(0,0))+scale_y_continuous(limits=c(0.5, 4), expand = c(0,0))+
-  labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
-  geom_text(aes(x=2, y=3.5), label=expression(italic(r)*" = "*"0.58, "* italic(p) < 0.001), size=4)+
-  geom_text(aes(x=8, y=1), label="c)", size=8)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=10),axis.title=element_text(size=11))
 
-new_d<-data.frame(ds_tmean=seq(4, 13, 0.2))
-new_d<-cbind(new_d, predict(w3, new_d, se.fit = T)[c('fit', 'se.fit')])
-new_d$lci<-new_d$fit-(new_d$se.fit*1.96)
-new_d$uci<-new_d$fit+(new_d$se.fit*1.96)
-
-p4<-ggplot()+
-  geom_point(data=wave_sum[-c(13, 17,18,32),], aes(y=w_period, x=ds_tmean))+
-  geom_line(data=new_d, aes(x=ds_tmean, y=fit),colour='red', linewidth=1)+
-  geom_ribbon(data=new_d, aes(x=ds_tmean, ymin=lci, ymax=uci), alpha=0.5, fill='grey')+
+# altimeter periodicity
+p5<-ggplot()+geom_point(data=wave_sum[-c(13, 17,18,32),], aes(y=w_period, x=ds_tmean))+
+  scale_x_continuous(limits=c(4, 13), breaks=4:13, expand = c(0,0))+scale_y_continuous(limits=c(6, 12), breaks=6:12, expand = c(0,0))+
+  labs(x='Wave period from altimeters (s)',y='Wave period from satellite (s)', size=4)+
+  geom_text(aes(x=10.5, y=6.5), label=expression(italic(r)*" = "*"0.86, "* italic(p) < 0.001), size=4)+
   theme_bw()+
-  scale_x_continuous(limits=c(4, 13), breaks=4:13, expand = c(0,0))+scale_y_continuous(limits=c(6, 13), breaks=6:13, expand = c(0,0))+
-  labs(x='Wave period from albatross altimeters (s)',y='Wave period from satellite (s)', size=5)+
-  geom_text(aes(x=6, y=12), label=expression(italic(r)*" = "*"0.86, "* italic(p) < 0.001), size=4)+
-  geom_text(aes(x=12, y=7), label="d)", size=8)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=10),axis.title=element_text(size=11))
 
-# Make mega plot!!
+# GPS height
+p6<-ggplot()+geom_point(data=wave_sum, aes(y=w_height, x=gps_hsig))+
+   scale_x_continuous(limits=c(1, 9), breaks=1:9, expand = c(0,0))+
+  scale_y_continuous(limits=c(1, 4), expand = c(0,0))+
+  labs(x='Wave height from GPS (m)',y='Wave height from satellite (m)', size=4)+
+  geom_text(aes(x=7, y=1.25), label=expression(italic(r)*" = "*"0.37, "* italic(p)*" = "*0.03), size=4)+
+  theme_bw()+
+  theme(axis.text=element_text(size=10),axis.title=element_text(size=11))
 
-areas <- c(patchwork::area(1, 1, 1, 3),patchwork::area(2, 1, 2, 2), patchwork::area(2, 3, 2,3))
-p1 + p2 + (p3/p4) + plot_layout(design = areas)
+# GPS periodicity
+#ns
+p7<-ggplot()+geom_point(data=wave_sum[wave_sum$gps_hsig<6,], aes(y=w_period, x=gps_tmean))+
+   scale_y_continuous(limits=c(6, 12), breaks=6:12, expand = c(0,0))+
+  labs(x='Wave period from GPS (s)',y='Wave period from satellite (s)', size=4)+
+  geom_text(aes(x=42, y=6.5), label=expression(italic(p)*" = NS"), size=4)+
+  theme_bw()+
+  theme(axis.text=element_text(size=10),axis.title=element_text(size=11))
+
+(p4+p6)/(p5+p7)
+
+# Make mega plot!! - Not used not, split into two figures
+#areas <- c(patchwork::area(1, 1, 1, 3),patchwork::area(2, 1, 2, 2), patchwork::area(2, 3, 2,3))
+#p1 + (p2/p3) + (p4/p5) + plot_layout(design = areas)
 
 #### ^^ ####
 
@@ -511,8 +547,8 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   scale_colour_manual(values = cols.alpha)+coord_cartesian(xlim=c(-20, 40))+
   theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
         legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
-  scale_colour_manual("Altitude estimation method", values=cols.alpha, labels=c("Dynamic soaring calibrated altimeter", 
-  "GPS Altitude", "Sitting satellite calibrated altimeter"))+labs(x="Altitude (m)", y="Density")
+  scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters zeroed with dynamic soaring", 
+  "GPS Altitude", "Altimeters zeroed when birds sat on the water"))+labs(x="Flight height (m)", y="Density")
 
 # Now run stats on difference data to keep things normal
 
