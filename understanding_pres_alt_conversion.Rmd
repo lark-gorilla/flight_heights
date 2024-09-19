@@ -99,11 +99,15 @@ for (i in unique(dat$burstID))
   # original method - 95% upper quantile of pressure to set p0 for entire burst
   dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
   
-    if(unique(dat[dat$burstID==i,]$class)=="A") #seperate p0 values for sitting vs flying in takeoff/landing bursts
+  if(unique(dat[dat$burstID==i,]$class)=="A") #separate p0 values for sitting vs flying in takeoff/landing bursts
         {
-        dat[dat$burstID==i &dat$sit_fly=="sit",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="sit",]$pres_pa, probs=0.95)
+        dat[dat$burstID==i &dat$sit_fly=="sit",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="sit",]$pres_pa, probs=0.50)
         dat[dat$burstID==i &dat$sit_fly=="fly",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="fly",]$pres_pa, probs=0.95)
         }
+  if(unique(dat[dat$burstID==i,]$class)=="S") #Use 0.5 for wave height to assume mean sea level
+  {
+    dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.50)
+  }
 }
   
 dat$alt_DS<-(-1*  # *-1 flips negative/positive values
