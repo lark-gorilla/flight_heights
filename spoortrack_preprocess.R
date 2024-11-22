@@ -6,7 +6,6 @@ library(readxl)
 library(sf)
 library(tmap)
 
-
 setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment")
 
 # read data
@@ -132,20 +131,28 @@ ggplot()+
 dat<-dat%>%group_by(burstID)%>%mutate(sub_burst = cut(UTC.Timestamp, breaks = 5, labels=c("a", "b", "c", "d", "e" )))
 dat$sub_burst<-paste(dat$burstID, dat$sub_burst, sep="_")
 
-zc_summary<-data.frame(dat%>%group_by(sp, ID, sub_burst)%>%summarise(speed=first(Speed..km.h.), temp=first(Device.Temperature), Pvar=var(Pressure)),
-                       Hsig=NA,Hmean=NA, Tmean=NA, Tsig=NA)
+sub_burst_summary<-dat%>%group_by(burstID, sub_burst)%>%
+                         summarise(Pmed=median(Pressure))%>%ungroup%>%
+  group_by(burstID)%>%mutate(pres_ch=TRUE %in% (abs((median(Pmed)-Pmed))>0.5))
 
-for (i in unique(dat$sub_burst))
+sub_burst_summary<-sub_burst_summary%>%group_by(burstID)%>%slice(1)
+
+zc_summary<-data.frame(dat%>%group_by(sp, ID, burstID)%>%summarise(speed=first(Speed..km.h.),
+                      temp=first(Device.Temperature),Psd=sd(Pressure)),
+                       Hsig=NA,Hmean=NA, Tmean=NA, Tsig=NA)
+zc_summary<-left_join(zc_summary, sub_burst_summary%>%dplyr::select(burstID, pres_ch), by="burstID")
+
+for (i in unique(dat$burstID))
 {
   possibleError <-tryCatch(
-    waveStatsZC(dat[dat$sub_burst==i,]$Pressure, 1,),
+    waveStatsZC(dat[dat$burstID==i,]$Pressure, 1,),
     error=function(e) e)
   if(!inherits(possibleError, "error")){
-  d1<-waveStatsZC(dat[dat$sub_burst==i,]$Pressure, 1,)
-  zc_summary[zc_summary$sub_burst==i,]$Hsig=d1$Hsig
-  zc_summary[zc_summary$sub_burst==i,]$Hmean=d1$Hmean
-  zc_summary[zc_summary$sub_burst==i,]$Tmean=d1$Tmean
-  zc_summary[zc_summary$sub_burst==i,]$Tsig=d1$Tsig
+  d1<-waveStatsZC(dat[dat$burstID==i,]$Pressure, 1,)
+  zc_summary[zc_summary$burstID==i,]$Hsig=d1$Hsig
+  zc_summary[zc_summary$burstID==i,]$Hmean=d1$Hmean
+  zc_summary[zc_summary$burstID==i,]$Tmean=d1$Tmean
+  zc_summary[zc_summary$burstID==i,]$Tsig=d1$Tsig
   }else{next}
 }
 # 11/03 - only 11 NAs
@@ -153,13 +160,13 @@ for (i in unique(dat$sub_burst))
 #check and remove extreme values (temp, Hsig etc)
 
 ggplot(data=zc_summary)+geom_histogram(aes(x=speed))
-ggplot(data=zc_summary)+geom_histogram(aes(x=Pvar), bins=50)
+ggplot(data=zc_summary)+geom_histogram(aes(x=Psd), bins=50)
 ggplot(data=zc_summary)+geom_density(aes(x=temp, col=ifelse((speed/3.6)<4, "sit", "fly")))  # a few minus values
 ggplot(data=zc_summary)+geom_density(aes(x=Hsig, col=ifelse((speed/3.6)<4, "sit", "fly")))
 ggplot(data=zc_summary)+geom_density(aes(x=Hmean, col=ifelse((speed/3.6)<4, "sit", "fly")))
 ggplot(data=zc_summary)+geom_density(aes(x=Tmean, col=ifelse((speed/3.6)<4, "sit", "fly")))
 ggplot(data=zc_summary)+geom_density(aes(x=Tsig, col=ifelse((speed/3.6)<4, "sit", "fly")))
-ggplot(data=zc_summary[zc_summary$Pvar<1,])+geom_point(aes(x=Pvar, y=Hmean, col=ifelse((speed/3.6)<4, "sit", "fly")), alpha=0.2, shape=1)
+ggplot(data=zc_summary[zc_summary$Psd<1,])+geom_point(aes(x=Psd, y=Hmean, col=ifelse((speed/3.6)<4, "sit", "fly")), alpha=0.2, shape=1)
 
 ggplot(data=dat%>%filter(burstID==2242))+geom_line(aes(x=DateTime_AEDT, y=Pressure))
 
@@ -174,7 +181,8 @@ ggplot(data=zc_summary[zc_summary$Hmean<5,])+geom_point(aes(x=temp, y=Hmean, col
 bad_bursts<-zc_summary%>%filter(Hmean>5)%>%pull(burstID) # these are bursts with dives, not too many so remove
 bad_bursts<-c(bad_bursts, zc_summary%>%filter(is.na(Hmean))%>%pull(burstID)) # weird pressure bursts, remove
 bad_bursts<-c(bad_bursts, zc_summary%>%filter(temp<0)%>%pull(burstID)) # negative temps remove
-bad_bursts<-c(bad_bursts, zc_summary%>%filter(Pvar>3)%>%pull(burstID)) # large variances
+bad_bursts<-c(bad_bursts, zc_summary%>%filter(Psd>1.5)%>%pull(burstID)) # large variances
+bad_bursts<-c(bad_bursts, zc_summary%>%filter(pres_ch==TRUE)%>%pull(burstID)) # earlier identified step changes/gradients
 
 bad_bursts<-unique(bad_bursts)
 #remove from burst summary data
@@ -182,6 +190,7 @@ zc_summary<-na.omit(zc_summary%>%filter(!burstID%in%bad_bursts))
 
 # try kmeans clustering
 km1<-kmeans(zc_summary$Hmean, 2)
+library(cluster)
 pam1<-pam(zc_summary$Hmean, 2)
 zc_summary$Hmean_class<-km1$cluster # 1= sit, 2= fly
 zc_summary$final_class<-ifelse((zc_summary$speed/3.6)>=4 & zc_summary$Hmean_class==2, "fly",
@@ -191,19 +200,24 @@ zc_summary$final_class<-ifelse((zc_summary$speed/3.6)>=4 & zc_summary$Hmean_clas
 table(zc_summary$final_class)
 
 ggplot(data=zc_summary)+geom_point(aes(x=speed, y=Hmean, col=final_class), alpha=0.2, shape=1)
-
-ggplot(data=zc_summary[zc_summary$final_class=='takeoff',])+geom_point(aes(x=Pvar, y=Hmean), alpha=0.2, shape=1)
-
+# speed break, pretty clear
+#could check takeoff with loop below?
+ggplot(data=zc_summary[zc_summary$final_class=='takeoff',])+geom_point(aes(x=Psd, y=Hmean), alpha=0.2, shape=1)
 for(i in zc_summary[zc_summary$final_class=='takeoff',]$burstID)
 {
   print(ggplot(data=dat%>%filter(burstID==i))+geom_line(aes(x=DateTime_AEDT, y=Pressure))+labs(title=i))
   print(zc_summary[zc_summary$burstID==i,])
   readline()
 }
-
-zc_summary%>%filter(Tmean>18&Tmean<20)%>%pull(burstID)
+zc_summary$speed_class<-"sit"
+zc_summary[(zc_summary$speed/3.6)>4,]$speed_class<-"fly"
+ggplot(data=zc_summary)+geom_point(aes(x=speed, y=Hmean, col=speed_class), alpha=0.2, shape=1)
+# use simple sit/fly to identify flying bursts for flight height calculation
+fly_bursts<-zc_summary[zc_summary$speed_class=='fly',]$burstID
 
 #### Calculation of flight height using dynamic soaring method ####
+#remove bar bursts first
+dat<-dat%>%ungroup()%>%filter(!burstID%in% bad_bursts)%>%as.data.frame()
 
 # barometric formula (Berberan Santos et al. 1997)
 #h=((k*T)/(m*g))*ln(p/p0)
@@ -225,6 +239,60 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 
 
 #### ^^^ ####
+
+#### Summarise and compare altitude between species  ####
+
+dat_flying<-dat%>%filter(burstID%in%fly_bursts) # select flying only data
+
+#remove some erroneous bursts
+dat_flying<-filter(dat_flying, burstID!=8788)
+
+#summarise
+dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=n_distinct(burstID),mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), median=median(alt_DS),
+                                        min=min(alt_DS), max=max(alt_DS),
+                                        q25=quantile(alt_DS, 0.25), q75=quantile(alt_DS, 0.75),
+                                        q5=quantile(alt_DS, 0.05), q95=quantile(alt_DS, 0.95),
+                                        q1=quantile(alt_DS, 0.01), q99=quantile(alt_DS, 0.99))
+#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table.csv')
+#ignore min values as dives!
+# make sp plots
+dat_flying$sp<-as.factor(dat_flying$sp)
+dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL"),
+                            labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+                            "Indian Yellow-nosed Albatross",'Northern Giant Petrel', "Southern Giant Petrel", "Wandering Albatross"))
+
+cols <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ffff33','#ff7f00','#a65628','#f781bf')
+
+cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[2], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[3], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[4], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[5], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[6], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[7], alpha.f = 0.75),
+              grDevices::adjustcolor(cols[8], alpha.f = 0.75))
+
+ggplot(data=dat_flying)+geom_density(aes(x=alt_DS, colour=sp), bw="bcv", trim=T, fill=NA, size=2)+
+  geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(breaks=seq(-10,50,2))+
+  coord_cartesian(xlim=c(-10, 50))+
+  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
+        legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
+  scale_colour_manual("Species", values=cols.alpha,labels=c(
+    'White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+    "Indian Yellow-nosed Albatross",'Northern Giant Petrel', "Southern Giant Petrel", "Wandering Albatross"))+
+  labs(x="Altitude (m)", y="Density")
+
+ggplot(data=dat_flying)+geom_density(aes(x=alt_DS), bw="bcv", fill=NA, size=1, trim=T)+
+  geom_vline(xintercept = 0, linetype='dotted')+
+  geom_vline(xintercept = 10, linetype='dotted', col='orange')+
+  geom_vline(xintercept = 20, linetype='dotted', col='orange')+
+  geom_vline(xintercept = 30, linetype='dotted', col='orange')+
+  scale_x_continuous(breaks=seq(-10, 50, 5))+
+  coord_cartesian(xlim=c(-10, 50))+
+  facet_wrap(~sp, ncol=2)+theme_bw()+
+  labs(x="Altitude (m)", y="Density")
+
+
 
 dat%>%filter((Speed..km.h./3.6)>4)%>%group_by(sp)%>%summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), median=median(alt_DS),
                                         min=min(alt_DS), max=max(alt_DS),
