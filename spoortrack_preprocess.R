@@ -255,6 +255,22 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
                                         q1=quantile(alt_DS, 0.01), q99=quantile(alt_DS, 0.99))
 #write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table.csv')
 #ignore min values as dives!
+
+#bin into 1m bands
+bins_1m<-dat_flying%>%group_by(sp)%>%
+  mutate(category = cut(alt_DS, breaks = c(-Inf,seq(-10, 50, 1),Inf), labels = seq(-10, 51, 1))) %>%
+                        count(category)
+
+ggplot(bins_1m, aes(x=factor(category), y=n)) +
+  geom_bar(stat="identity", width=1.0, col=1)+
+  geom_vline(xintercept = "0", linetype='dotted')+
+  geom_vline(xintercept = "10", linetype='dotted', col='orange')+
+  geom_vline(xintercept = "20", linetype='dotted', col='orange')+
+  geom_vline(xintercept = "30", linetype='dotted', col='orange')+
+  scale_x_discrete(breaks=seq(-10, 50, 5))+
+  facet_wrap(~sp, ncol=2,scales='free_y')+theme_bw()+
+  labs(x="Flight height (m)", y="Count")
+
 # make sp plots
 dat_flying$sp<-as.factor(dat_flying$sp)
 dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL"),
