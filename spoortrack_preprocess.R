@@ -74,7 +74,30 @@ dat$burstID<-as.numeric(as.factor(paste(dat$ID, year(dat$DateTime_AEDT), month(d
                                         dat$Latitude, dat$Longitude, dat$Heading, dat$Battery.Voltage)))
 table(table(dat$burstID))
 
+# make Deployment duration fig
+d1<-dat%>%group_by(sp, ID)%>%summarise(st_dep=first(DateTime_AEDT),
+                                       end_dep=last(DateTime_AEDT))%>%as.data.frame()
+d1$sp<-base::factor(d1$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL"),
+                            labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+                                      "Indian Yellow-nosed Albatross",'Northern Giant Petrel', "Southern Giant Petrel", "Wandering Albatross"))
+
+ggplot(data=d1)+
+  geom_rect(aes(xmin=st_dep, xmax=end_dep, ymin=paste(sp,ID), ymax=paste(sp,ID)), col=1, size=3)+
+  scale_x_datetime(date_minor_breaks="month")
+
+#Duration lengths
+d1$end_dep-d1$st_dep
+#> mean(d1$end_dep-d1$st_dep)
+#Time difference of 33.57532 days
+#> min(d1$end_dep-d1$st_dep)
+#Time difference of 3.211794 days
+#> max(d1$end_dep-d1$st_dep)
+#Time difference of 68.04513 days
+#> sd(d1$end_dep-d1$st_dep)
+#[1] 17.16857
+
 # write out compiled coord file
+
 #write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_18nov_coords.csv", quote=F, row.names=F)
 
 id_l<-data.frame(table(dat$burstID))
@@ -88,7 +111,12 @@ dat_sf<-dat_sf%>%arrange(ID, DateTime_AEDT)
 
 linez<-dat_sf %>%group_by(ID, sp) %>%
   dplyr::summarize(do_union=F) %>%  # do_union=FALSE doesn't work as well
-  st_cast("LINESTRING")%>%st_wrap_dateline() 
+  st_cast("LINESTRING")%>%st_wrap_dateline()
+#st_write(linez, "compiled_18nov_linez.shp")
+
+linez_laea<-st_transform(linez, crs="+proj=laea +lat_0=-46 +lon_0=158 +x_0=0 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
+
+ggplot(data=linez_laea)+geom_sf(aes(colour=sp))
 
 tmap_mode("view")
 tm_shape(linez)+tm_lines(col=as.character("ID"))
