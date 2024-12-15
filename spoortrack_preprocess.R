@@ -11,9 +11,9 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea 
 # read data
 
 dat<-NULL
-for(i in list.files("18nov_datapull"))
+for(i in list.files("13dec_datapull"))
 {
-d1<-read.csv(paste0("18nov_datapull/", i), skip=1)
+d1<-read.csv(paste0("13dec_datapull/", i), skip=1)
 dat<-rbind(dat, data.frame(d1, ID=substr(i, 3, 6)))
 }
 
@@ -21,14 +21,15 @@ dat<-dat%>%dplyr::select(-c('Number.of.SVs', 'Altitude..metres.',
                             'Sensor.Temperature', 'Time.Underwater', 'Activity.Count'))
 
 # remove loggers that failed to turn on
-dat<-filter(dat, !ID%in%c(1202, 1319))
+dat<-dplyr::filter(dat, !ID%in%c(1202, 1319, 1666))
 
 #assign species
 dat$sp<-"NA"
 dat[dat$ID %in%c(1313,1314,1315,1321,1322,1323),]$sp<-"BUAL"
 dat[dat$ID %in%c(1183,1200, 1196, 1316, 1318),]$sp<-"WCAL"
 dat[dat$ID %in%c(1428),]$sp<-"SHAL"
-dat[dat$ID %in%c(1427, 1437, 1433, 1443),]$sp<-"WAAL"
+dat[dat$ID %in%c(1427, 1433),]$sp<-"WAAL"
+dat[dat$ID %in%c(1437, 1660, 1443),]$sp<-"NZAL"
 dat[dat$ID %in%c(1324,1424,1425,1430,1431,1432),]$sp<-"NGPE"
 dat[dat$ID %in%c(1426),]$sp<-"SGPE"
 dat[dat$ID %in%c(1320),]$sp<-"IYNA"
@@ -68,6 +69,7 @@ dat<-dat%>%filter(!(ID=="1425" & DateTime_AEDT<ymd_hms("2024-10-22 10:00:00", tz
 dat<-dat%>%filter(!(ID=="1433" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
 dat<-dat%>%filter(!(ID=="1437" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
 dat<-dat%>%filter(!(ID=="1427" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1660" & DateTime_AEDT<ymd_hms("2024-11-28 12:00:00", tz="Australia/Sydney")))
 
 # make burst ID
 dat$burstID<-as.numeric(as.factor(paste(dat$ID, year(dat$DateTime_AEDT), month(dat$DateTime_AEDT), day(dat$DateTime_AEDT), hour(dat$DateTime_AEDT),
@@ -77,9 +79,9 @@ table(table(dat$burstID))
 # make Deployment duration fig
 d1<-dat%>%group_by(sp, ID)%>%summarise(st_dep=first(DateTime_AEDT),
                                        end_dep=last(DateTime_AEDT))%>%as.data.frame()
-d1$sp<-base::factor(d1$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL"),
+d1$sp<-base::factor(d1$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
                             labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
-                                      "Indian Yellow-nosed Albatross",'Northern Giant Petrel', "Southern Giant Petrel", "Wandering Albatross"))
+                                      "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross", "New Zealand Wandering Albatross"))
 
 ggplot(data=d1)+
   geom_rect(aes(xmin=st_dep, xmax=end_dep, ymin=paste(sp,ID), ymax=paste(sp,ID)), col=1, size=3)+
@@ -88,17 +90,17 @@ ggplot(data=d1)+
 #Duration lengths
 d1$end_dep-d1$st_dep
 #> mean(d1$end_dep-d1$st_dep)
-#Time difference of 33.57532 days
-#> min(d1$end_dep-d1$st_dep)
+#Time difference of 37.38399 days
+# min(d1$end_dep-d1$st_dep)
 #Time difference of 3.211794 days
-#> max(d1$end_dep-d1$st_dep)
-#Time difference of 68.04513 days
-#> sd(d1$end_dep-d1$st_dep)
-#[1] 17.16857
+# max(d1$end_dep-d1$st_dep)
+#Time difference of 93.08679 days
+# sd(d1$end_dep-d1$st_dep)
+#[1] 21.01421
 
 # write out compiled coord file
 
-#write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_18nov_coords.csv", quote=F, row.names=F)
+#write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_13dec_coords.csv", quote=F, row.names=F)
 
 id_l<-data.frame(table(dat$burstID))
 dat<-dat[dat$burstID%in% id_l[id_l$Freq>299,]$Var1,] # remove bursts less than 299 secs 
@@ -112,7 +114,7 @@ dat_sf<-dat_sf%>%arrange(ID, DateTime_AEDT)
 linez<-dat_sf %>%group_by(ID, sp) %>%
   dplyr::summarize(do_union=F) %>%  # do_union=FALSE doesn't work as well
   st_cast("LINESTRING")%>%st_wrap_dateline()
-#st_write(linez, "compiled_18nov_linez.shp")
+#st_write(linez, "compiled_13dec_linez.shp")
 
 linez_laea<-st_transform(linez, crs="+proj=laea +lat_0=-46 +lon_0=158 +x_0=0 +y_0=0 +ellps=WGS84 +towgs84=0,0,0,0,0,0,0 +units=m +no_defs")
 
@@ -129,16 +131,17 @@ sp_df<-dat%>%group_by(sp, burstID)%>%summarise(speed=first(Speed..km.h.))
 
 sp_df%>%filter((speed/3.6)>4)%>%
   summarise(mean_s=mean(speed/3.6), sd_s=sd(speed/3.6))
-#sp    mean_s  sd_s  -- remember includes some landing bursts for some
+#sp    mean_s  sd_s  
 #<chr>  <dbl> <dbl>
-#1 BBAL    14.8  5.51
+#  1 BBAL    14.8  5.51
 #2 BUAL    13.5  4.94
 #3 IYNA    11.5  3.88
-#4 NGPE    14.7  5.50
-#5 SGPE    16.3  5.73
-#6 SHAL    13.7  4.71
-#7 WAAL    15.0  4.99
-#8 WCAL    14.2  4.85
+#4 NGPE    14.7  5.43
+#5 NZAL    14.5  4.41
+#6 SGPE    16.3  5.73
+#7 SHAL    13.3  4.30
+#8 WAAL    15.6  5.22
+#9 WCAL    14.2  4.85
  
 
 ggplot()+
@@ -274,6 +277,7 @@ dat_flying<-dat%>%filter(burstID%in%fly_bursts) # select flying only data
 
 #remove some erroneous bursts
 dat_flying<-filter(dat_flying, burstID!=8788)
+dat_flying<-filter(dat_flying, burstID!=11207   )
 
 #summarise
 dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=n_distinct(burstID),mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), median=median(alt_DS),
@@ -281,8 +285,14 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
                                         q25=quantile(alt_DS, 0.25), q75=quantile(alt_DS, 0.75),
                                         q5=quantile(alt_DS, 0.05), q95=quantile(alt_DS, 0.95),
                                         q1=quantile(alt_DS, 0.01), q99=quantile(alt_DS, 0.99))
-#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table.csv')
+#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_dec13.csv')
 #ignore min values as dives!
+
+dat_flying$sp<-as.factor(dat_flying$sp)
+dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
+                            labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+                                      "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross",
+                                      "New Zealand Wandering Albatross"))
 
 #bin into 1m bands
 bins_1m<-dat_flying%>%group_by(sp)%>%
@@ -300,10 +310,7 @@ ggplot(bins_1m, aes(x=factor(category), y=n)) +
   labs(x="Flight height (m)", y="Count")
 
 # make sp plots
-dat_flying$sp<-as.factor(dat_flying$sp)
-dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL"),
-                            labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
-                            "Indian Yellow-nosed Albatross",'Northern Giant Petrel', "Southern Giant Petrel", "Wandering Albatross"))
+
 
 cols <- c('#e41a1c','#377eb8','#4daf4a','#984ea3','#ffff33','#ff7f00','#a65628','#f781bf')
 
