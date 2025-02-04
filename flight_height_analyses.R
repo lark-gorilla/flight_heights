@@ -283,17 +283,17 @@ wilcox.test(x=zc_summary[zc_summary$class!="S",]$ds_tmean, y=zc_summary[zc_summa
 
 p1<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa), size=1)+scale_y_reverse()+
-  labs(y="Pressure (mb) - reversed", x="Time")+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  labs(y="Pressure (Pa) - reversed", x="Time")+
   geom_hline(yintercept=unique(dat[dat$burstID=="08611854_04_122",]$p0), colour='red')+theme_bw()+
-  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
+  theme(axis.text=element_text(size=15),axis.title=element_text(size=17))
 
 p1.5<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+
-geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(option='plasma',trans="reverse")+
-labs(x="Longitude", y="Latitude", colour="Pressure\n(mb)\n-reversed\n\n\n")+theme_bw()
+geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
+labs(x="Longitude", y="Latitude", colour="Pressure\n(Pa)\n\n")+theme_bw()
 plot_gg(p1.5, height=4, width=8, pointcontract = 0.5, sunangle = 40)
 
-render_snapshot("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot.png", clear = T)
+render_snapshot("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot2.png", dpi=900, clear = T)
 
 p2<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
   geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
@@ -301,15 +301,15 @@ geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='#00A9FF')+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='#00A9FF')+
   labs(y="Altitude (m)")+
   geom_hline(yintercept=0, linetype='dotted')+theme_bw()+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+  theme(axis.text=element_text(size=15),axis.title=element_text(size=17))+
   scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2), minor_breaks = NULL)+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
-p1.6 <- fig("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot_zoom.png")
+p1.6 <- fig("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot2.png")
   
 wrap_plots(p1, p1.6, p2, nrow=3)
-p1+p1.6+p2 + plot_layout(nrow=3, heights = c(1,2))+ plot_annotation(tag_levels = 'a',tag_suffix = ')')+theme(plot.tag = element_text(size = 14))
- 
+p1+p1.6+p2 + plot_layout(nrow=3, heights = c(1,2,1))+ 
+  plot_annotation(tag_levels = 'a',tag_suffix = ')')&theme(plot.tag = element_text(size = 26)) # then export png @ 1400 x 1500 
 # do manually
 p1/p2
 
@@ -353,7 +353,7 @@ p2<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa), colour='grey', size=0.5, alpha=0.3)+
   geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1), colour="darkgrey")+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+
-  scale_y_reverse(name='Pressure (mb) - reversed')+
+  scale_y_reverse(name='Pressure (Pa) - reversed')+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)',  expand = c(0,0))+
   theme_bw() +
   geom_text(aes(x=ymd_hms("2023-04-03 09:48:00", tz="Australia/Sydney"), y=102150), label="b)", size=8)+
@@ -378,7 +378,7 @@ p3<-ggplot(data=fig_dat[fig_dat$burstID=="41490936_01_17",])+
         legend.background = element_blank())+
   scale_colour_manual("Flight height estimator", values=colors,labels=c("alt_DS" ="Altimeters zeroed with dynamic soaring", 
                                                                                  "alt_gps" = "GPS Altitude",
-                                                                                 "alt_SO"="Altimeters zeroed when birds sat on the water"))
+                                                                                 "alt_SO"="Altimeters zeroed from sitting at sea or satellite"))
 
 #make fig 4
 p1/p2/p3  
