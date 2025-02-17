@@ -548,7 +548,7 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
         legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
   scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters zeroed with dynamic soaring", 
-  "GPS Altitude", "Altimeters zeroed when birds sat on the water"))+labs(x="Flight height (m)", y="Density")
+  "GPS Altitude", "Altimeters zeroed from sitting at sea\nor satellite"))+labs(x="Flight height (m)", y="Density")
 
 # Now run stats on difference data to keep things normal
 
