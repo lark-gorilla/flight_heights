@@ -11,9 +11,9 @@ setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea 
 # read data
 
 dat<-NULL
-for(i in list.files("13dec_datapull"))
+for(i in list.files("04mar2025_datapull"))
 {
-d1<-read.csv(paste0("13dec_datapull/", i), skip=1)
+d1<-read.csv(paste0("04mar2025_datapull/", i), skip=1)
 dat<-rbind(dat, data.frame(d1, ID=substr(i, 3, 6)))
 }
 
@@ -83,6 +83,8 @@ d1$sp<-base::factor(d1$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE
                             labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
                                       "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross", "New Zealand Wandering Albatross"))
 
+d1$sp_ID<-factor(paste(d1$sp, d1$ID))
+
 ggplot(data=d1)+
   geom_rect(aes(xmin=st_dep, xmax=end_dep, ymin=paste(sp,ID), ymax=paste(sp,ID)), col=1, size=3)+
   scale_x_datetime(date_minor_breaks="month")
@@ -90,13 +92,13 @@ ggplot(data=d1)+
 #Duration lengths
 d1$end_dep-d1$st_dep
 #> mean(d1$end_dep-d1$st_dep)
-#Time difference of 37.38399 days
+#Time difference of 43.43571 days
 # min(d1$end_dep-d1$st_dep)
 #Time difference of 3.211794 days
 # max(d1$end_dep-d1$st_dep)
-#Time difference of 93.08679 days
+#Time difference of 132.868 days
 # sd(d1$end_dep-d1$st_dep)
-#[1] 21.01421
+#[1] 30.15556
 
 # write out compiled coord file
 
@@ -133,16 +135,17 @@ sp_df%>%filter((speed/3.6)>4)%>%
   summarise(mean_s=mean(speed/3.6), sd_s=sd(speed/3.6))
 #sp    mean_s  sd_s  
 #<chr>  <dbl> <dbl>
+sp    mean_s  sd_s
+#<chr>  <dbl> <dbl>
 #  1 BBAL    14.8  5.51
 #2 BUAL    13.5  4.94
 #3 IYNA    11.5  3.88
 #4 NGPE    14.7  5.43
-#5 NZAL    14.5  4.41
+#5 NZAL    14.5  4.72
 #6 SGPE    16.3  5.73
-#7 SHAL    13.3  4.30
-#8 WAAL    15.6  5.22
+#7 SHAL    13.2  4.30
+#8 WAAL    15.5  5.16
 #9 WCAL    14.2  4.85
- 
 
 ggplot()+
   geom_histogram(data=sp_df,
@@ -277,7 +280,8 @@ dat_flying<-dat%>%filter(burstID%in%fly_bursts) # select flying only data
 
 #remove some erroneous bursts
 dat_flying<-filter(dat_flying, burstID!=8788)
-dat_flying<-filter(dat_flying, burstID!=11207   )
+dat_flying<-filter(dat_flying, burstID!=11207)
+dat_flying<-filter(dat_flying, burstID!=11306)
 
 #summarise
 dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=n_distinct(burstID),mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), median=median(alt_DS),
@@ -285,7 +289,7 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
                                         q25=quantile(alt_DS, 0.25), q75=quantile(alt_DS, 0.75),
                                         q5=quantile(alt_DS, 0.05), q95=quantile(alt_DS, 0.95),
                                         q1=quantile(alt_DS, 0.01), q99=quantile(alt_DS, 0.99))
-#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_dec13.csv')
+#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_mar2025.csv')
 #ignore min values as dives!
 
 dat_flying$sp<-as.factor(dat_flying$sp)
