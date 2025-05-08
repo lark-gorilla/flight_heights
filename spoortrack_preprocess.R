@@ -5,6 +5,9 @@ library(oceanwaves)
 library(readxl)
 library(sf)
 library(tmap)
+library(suncalc)
+library(lutz)
+library(adehabitatLT)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment")
 
@@ -102,7 +105,7 @@ d1$end_dep-d1$st_dep
 
 # write out compiled coord file
 
-#write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_13dec_coords.csv", quote=F, row.names=F)
+#write.csv(dat%>%group_by(ID, burstID)%>%summarise_all(first), "compiled_04mar25_coords.csv", quote=F, row.names=F)
 
 id_l<-data.frame(table(dat$burstID))
 dat<-dat[dat$burstID%in% id_l[id_l$Freq>299,]$Var1,] # remove bursts less than 299 secs 
@@ -135,7 +138,7 @@ sp_df%>%filter((speed/3.6)>4)%>%
   summarise(mean_s=mean(speed/3.6), sd_s=sd(speed/3.6))
 #sp    mean_s  sd_s  
 #<chr>  <dbl> <dbl>
-sp    mean_s  sd_s
+# sp    mean_s  sd_s
 #<chr>  <dbl> <dbl>
 #  1 BBAL    14.8  5.51
 #2 BUAL    13.5  4.94
@@ -147,6 +150,22 @@ sp    mean_s  sd_s
 #8 WAAL    15.5  5.16
 #9 WCAL    14.2  4.85
 
+sp_df%>%filter((speed/3.6)>4)%>%
+summarise(mean_s=mean(speed/3.6), sd_s=sd(speed/3.6), min=min(speed/3.6), q01=quantile(speed/3.6, 0.01), q05=quantile(speed/3.6, 0.05), q25=quantile(speed/3.6, 0.25),
+          med=median(speed/3.6), q75=quantile(speed/3.6, 0.75),q95=quantile(speed/3.6, 0.95), q99=quantile(speed/3.6, 0.99), max=max(speed/3.6))
+
+# sp    mean_s  sd_s   min   q01   q05   q25   med   q75   q95   q99   max
+#<chr>  <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+#1 BBAL    14.8  5.51  4.17  6.14  7.86 10.7   13.9  17.8  25.6  30.8  31.7
+#2 BUAL    13.5  4.94  4.17  4.72  6.67 10     12.8  16.4  22.9  27.2  33.6
+#3 IYNA    11.5  3.88  4.44  5     5.86  9.17  11.1  13.3  19.7  23.6  24.7
+#4 NGPE    14.7  5.43  4.17  5.68  7.22 10.6   13.9  18.3  24.9  28.8  36.9
+#5 NZAL    14.5  4.72  4.17  5.83  8.06 11.4   13.9  16.9  23.1  27.7  61.9
+#6 SGPE    16.3  5.73  4.44  6.83  8.61 12.4   15.3  19.4  27.5  32.0  35.3
+#7 SHAL    13.2  4.30  4.44  5.28  6.57 10.3   12.8  15.3  21.3  25.9  27.2
+#8 WAAL    15.5  5.16  4.17  5.83  8.33 11.7   14.7  18.6  25    28.6  36.9
+#9 WCAL    14.2  4.85  4.17  5.28  7.78 10.8   13.3  16.7  23.6  28.7  33.6  
+
 ggplot()+
   geom_histogram(data=sp_df,
                  aes(x=speed/3.6, fill=ifelse((speed/3.6)<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
@@ -157,6 +176,57 @@ ggplot()+
   geom_density(data=sp_df%>%filter((speed/3.6)>4),
                  aes(x=speed/3.6, colour=sp))+
  theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+labs(colour='species')
+
+# Nocturnal flight analyses
+# Add day night classification.. slow loop
+NAF_df<-dat%>%group_by(sp,ID, burstID)%>%summarise(speed=first(Speed..km.h.), UTC.Timestamp =first(UTC.Timestamp),
+                                          DateTime_AEDT  =first(DateTime_AEDT), Latitude=first(Latitude), Longitude=first(Longitude))
+
+#interpolate to hourly points
+trajectories <- as.ltraj(xy=data.frame(NAF_df$Longitude,
+                                       NAF_df$Latitude),
+                         date=as.POSIXct(NAF_df$UTC.Timestamp, tz="UTC"),
+                         id=NAF_df$ID, infolocs=NAF_df[c("burstID","speed")]%>%as.data.frame(), typeII = TRUE)   
+
+trajectories_int <- redisltraj(trajectories, 3600, type="time")
+
+# to data.frame
+trajectories_int<-ld(trajectories_int)
+plot(y~x, data=trajectories_int, col=id)
+#rm some weird points
+bad_pz<-c(trajectories_int[trajectories_int$y> -40 &trajectories_int$x < -100&trajectories_int$x > -150 &trajectories_int$id==1433,]$pkey,
+          trajectories_int[trajectories_int$x>50 &trajectories_int$x<100,]$pkey)
+
+trajectories_int<-trajectories_int%>%filter(!pkey%in%bad_pz)
+
+#join original data
+NAF_df$pkey<-paste(NAF_df$ID, NAF_df$UTC.Timestamp, sep=".")
+NAF_df<-left_join(trajectories_int, NAF_df[,c(1,3,4,9)], by='pkey')
+
+NAF_df$UTC.Timestamp<-ymd_hms(NAF_df$date, tz="UTC")
+NAF_df$local_tz<-tz_lookup_coords(lat=NAF_df$y, lon=NAF_df$x, method='accurate')
+
+NAF_df$Timestamp.local<-as.character("none")
+for(i in 1:nrow(NAF_df)){NAF_df$Timestamp.local[i]<-as.character(with_tz(NAF_df$date[i], tz=NAF_df$local_tz[i]))}
+
+NAF_df$daynight<-"night"
+for(i in 1:nrow(NAF_df)){
+  dn1<-getSunlightTimes(date = as.Date(NAF_df$Timestamp.local[i],tz = NAF_df$local_tz[i]), lat = NAF_df$y[i], lon = NAF_df$x[i],tz = NAF_df$local_tz[i])
+  if(format(as.POSIXct(NAF_df$Timestamp.local[i]), format = '%H:%M:%S')<format(as.POSIXct(dn1$sunset), format = '%H:%M:%S')& 
+     format(as.POSIXct(NAF_df$Timestamp.local[i]), format = '%H:%M:%S')>format(as.POSIXct(dn1$dawn), format = '%H:%M:%S')){
+    NAF_df$daynight[i]<-"day"};print(i)}                       
+# use civil dawn and dusk as per Bonnet-Lebrun
+NAF_df%>%group_by(id, daynight)%>%summarise(n())%>%View()
+NAF_df%>%filter(id==1433)%>%View()
+
+#need to remove points when on land: Macca, Snares and Solander
+
+NAF_df_sf<-st_as_sf(NAF_df, coords=c("x", "y"), crs=4326)
+
+tmap_mode("view")
+tm_shape(dat_sf)+tm_dots(fill='red')+tm_shape(NAF_df_sf[,1])+tm_dots()
+
+
 
 # Use zero crossing analyses to summarize pressure values per burst.
 # Hoping this combined with speed/temp can classify sitting flying bursts.
