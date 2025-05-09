@@ -268,7 +268,10 @@ prop_fly=results%>%group_by(sp, daynight, sit_fly)%>%summarise(n=n())%>%
   ungroup()%>%group_by(sp, daynight)%>%mutate(sum(n))
 
 prop_fly$prop=round(prop_fly$n/prop_fly$`sum(n)`, 2)
-prop_fly%>%select(sp, daynight, sit_fly, prop)%>%pivot_wider(names_from = sit_fly, values_from = prop)
+prop_fly<-prop_fly%>%select(sp, daynight, sit_fly, prop)%>%pivot_wider(names_from = sit_fly, values_from = prop)
+
+prop_fly%>%group_by(daynight)%>%summarise_all(mean)
+                                                                       
 
 #need to remove points when on land: Macca, Snares and Solander
 
