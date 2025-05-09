@@ -7,7 +7,7 @@ library(sf)
 library(tmap)
 library(suncalc)
 library(lutz)
-library(adehabitatLT)
+library(geosphere)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment")
 
@@ -74,9 +74,12 @@ dat<-dat%>%filter(!(ID=="1437" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz
 dat<-dat%>%filter(!(ID=="1427" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
 dat<-dat%>%filter(!(ID=="1660" & DateTime_AEDT<ymd_hms("2024-11-28 12:00:00", tz="Australia/Sydney")))
 
-# make burst ID
-dat$burstID<-as.numeric(as.factor(paste(dat$ID, year(dat$DateTime_AEDT), month(dat$DateTime_AEDT), day(dat$DateTime_AEDT), hour(dat$DateTime_AEDT),
-                                        dat$Latitude, dat$Longitude, dat$Heading, dat$Battery.Voltage)))
+# for some reason some data not correctly ordered 
+dat<-dat%>%group_by(ID)%>%arrange(UTC.Timestamp)%>%ungroup()
+
+# make burst ID - now they follow logically with time
+dat$burstID<-as.numeric(paste0(dat$ID, as.double(ymd_h((format(as.POSIXct(dat$UTC.Timestamp), format = '%Y-%m-%d %H'))))))
+
 table(table(dat$burstID))
 
 # make Deployment duration fig
@@ -182,51 +185,86 @@ ggplot()+
 NAF_df<-dat%>%group_by(sp,ID, burstID)%>%summarise(speed=first(Speed..km.h.), UTC.Timestamp =first(UTC.Timestamp),
                                           DateTime_AEDT  =first(DateTime_AEDT), Latitude=first(Latitude), Longitude=first(Longitude))
 
-#interpolate to hourly points
-trajectories <- as.ltraj(xy=data.frame(NAF_df$Longitude,
-                                       NAF_df$Latitude),
-                         date=as.POSIXct(NAF_df$UTC.Timestamp, tz="UTC"),
-                         id=NAF_df$ID, infolocs=NAF_df[c("burstID","speed")]%>%as.data.frame(), typeII = TRUE)   
 
-trajectories_int <- redisltraj(trajectories, 3600, type="time")
+NAF_df$TrackTime <- as.double(NAF_df$UTC.Timestamp)
 
-# to data.frame
-trajectories_int<-ld(trajectories_int)
-plot(y~x, data=trajectories_int, col=id)
-#rm some weird points
-bad_pz<-c(trajectories_int[trajectories_int$y> -40 &trajectories_int$x < -100&trajectories_int$x > -150 &trajectories_int$id==1433,]$pkey,
-          trajectories_int[trajectories_int$x>50 &trajectories_int$x<100,]$pkey)
+#could run EmBC
+#forembc <- results[,c('Timestamp.local', 'Longitude', 'Latitude', 'ID')] #time, longitude, latitude, ID ( ! order is important !)
+#BC <- stbc(forembc)
+#smoothedBC <- smth(BC, dlta=1)
+#view(smoothedBC)
+#cleand$embc <- smoothedBC@A
+#cleand$embc <- gsub("2","foraging",cleand$embc)
+#cleand$embc <- gsub("1","resting",cleand$embc)
+#cleand$embc <- gsub("3","commuting",cleand$embc)
+#cleand$embc <- gsub("4","relocating",cleand$embc)
+#cleand$embc <- gsub("5","DD",cleand$embc)
 
-trajectories_int<-trajectories_int%>%filter(!pkey%in%bad_pz)
 
-#join original data
-NAF_df$pkey<-paste(NAF_df$ID, NAF_df$UTC.Timestamp, sep=".")
-NAF_df<-left_join(trajectories_int, NAF_df[,c(1,3,4,9)], by='pkey')
+####@@@@ RESAMPLE @@@@####
 
-NAF_df$UTC.Timestamp<-ymd_hms(NAF_df$date, tz="UTC")
-NAF_df$local_tz<-tz_lookup_coords(lat=NAF_df$y, lon=NAF_df$x, method='accurate')
+source("C:/Users/mmil0049/OneDrive - Monash University/code/flight_heights/Velocity_functions_and_Resample.r")
+## set up to not interpolate between points > 12 hr apart (ie > night time)
 
-NAF_df$Timestamp.local<-as.character("none")
-for(i in 1:nrow(NAF_df)){NAF_df$Timestamp.local[i]<-as.character(with_tz(NAF_df$date[i], tz=NAF_df$local_tz[i]))}
+results<-NULL
+for(i in unique(NAF_df$ID))
+{
+  Track<-NAF_df[NAF_df$ID == i,]
 
-NAF_df$daynight<-"night"
-for(i in 1:nrow(NAF_df)){
-  dn1<-getSunlightTimes(date = as.Date(NAF_df$Timestamp.local[i],tz = NAF_df$local_tz[i]), lat = NAF_df$y[i], lon = NAF_df$x[i],tz = NAF_df$local_tz[i])
-  if(format(as.POSIXct(NAF_df$Timestamp.local[i]), format = '%H:%M:%S')<format(as.POSIXct(dn1$sunset), format = '%H:%M:%S')& 
-     format(as.POSIXct(NAF_df$Timestamp.local[i]), format = '%H:%M:%S')>format(as.POSIXct(dn1$dawn), format = '%H:%M:%S')){
-    NAF_df$daynight[i]<-"day"};print(i)}                       
+  resample_output<-resample(Track, timeStep=1)  ## timeStep set for 1 hr, with 12 hr limit (edited within code)
+  
+  resample_output$Vel <- 0
+  for(j in 1:nrow(resample_output))
+  {
+    resample_output[j,]$Vel <- backforVel(point=j, trip=resample_output, n=4, alt=FALSE, filter=FALSE)
+  }
+  
+  results<-rbind(results,resample_output)
+  print(i)
+}
+
+results$DateGMT <- as.Date(as.POSIXlt(results$TrackTime, origin="1970-01-01", "GMT"))
+results$TimeGMT <- format((as.POSIXlt(results$TrackTime, origin="1970-01-01", "GMT")), "%H:%M:%S")
+
+results$DateTime2 <- paste(results$DateGMT, results$TimeGMT, sep= " ")
+results$DateTime2 <- as.POSIXct(strptime(results$DateTime2, "%Y-%m-%d %H:%M:%S"), "GMT")
+results$TrackTime2 <- as.double(results$DateTime2)
+
+#could add some max dist filter afte intepolation e.g. if distdiff > x then remove following duplicate rows?
+
+results$DateTime2<-ymd_hms(results$DateTime2, tz="UTC")
+results$local_tz<-tz_lookup_coords(lat=results$Latitude, lon=results$Longitude, method='accurate')
+
+results$Timestamp.local<-as.character("none")
+for(i in 1:nrow(results)){results$Timestamp.local[i]<-as.character(with_tz(results$DateTime2[i], tz=results$local_tz[i]))}
+
+results$daynight<-"night"
+for(i in 1:nrow(results)){
+  dn1<-getSunlightTimes(date = as.Date(results$Timestamp.local[i],tz = results$local_tz[i]), lat = results$Latitude[i], lon = results$Longitude[i],tz = results$local_tz[i])
+  if(format(as.POSIXct(results$Timestamp.local[i]), format = '%H:%M:%S')<format(as.POSIXct(dn1$sunset), format = '%H:%M:%S')& 
+     format(as.POSIXct(results$Timestamp.local[i]), format = '%H:%M:%S')>format(as.POSIXct(dn1$dawn), format = '%H:%M:%S')){
+    results$daynight[i]<-"day"};print(i)}                       
 # use civil dawn and dusk as per Bonnet-Lebrun
-NAF_df%>%group_by(id, daynight)%>%summarise(n())%>%View()
-NAF_df%>%filter(id==1433)%>%View()
+results%>%group_by(ID, daynight)%>%summarise(n())%>%View()
+results%>%filter(ID==1433)%>%View()
+#ok looks good.calssify sit/fly
+results$sit_fly<-"fly"
+results<-results%>%group_by(ID)%>%mutate(sit_fly=ifelse(duplicated(UTC.Timestamp), "sit", "fly"))%>%ungroup()
+results[(results$speed/3.6)<=4,]$sit_fly<-"sit"
+
+prop_fly=results%>%group_by(sp, daynight, sit_fly)%>%summarise(n=n())%>%
+  ungroup()%>%group_by(sp, daynight)%>%mutate(sum(n))
+
+prop_fly$prop=round(prop_fly$n/prop_fly$`sum(n)`, 2)
 
 #need to remove points when on land: Macca, Snares and Solander
 
-NAF_df_sf<-st_as_sf(NAF_df, coords=c("x", "y"), crs=4326)
+
+
+results_sf<-st_as_sf(results, coords=c("Longitude", "Latitude"), crs=4326)
 
 tmap_mode("view")
-tm_shape(dat_sf)+tm_dots(fill='red')+tm_shape(NAF_df_sf[,1])+tm_dots()
-
-
+tm_shape(results_sf)+tm_dots(fill=as.character("sit_fly"))
 
 # Use zero crossing analyses to summarize pressure values per burst.
 # Hoping this combined with speed/temp can classify sitting flying bursts.
