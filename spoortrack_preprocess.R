@@ -185,7 +185,6 @@ ggplot()+
 NAF_df<-dat%>%group_by(sp,ID, burstID)%>%summarise(speed=first(Speed..km.h.), UTC.Timestamp =first(UTC.Timestamp),
                                           DateTime_AEDT  =first(DateTime_AEDT), Latitude=first(Latitude), Longitude=first(Longitude))
 
-
 NAF_df$TrackTime <- as.double(NAF_df$UTC.Timestamp)
 
 #could run EmBC
@@ -230,7 +229,20 @@ results$DateTime2 <- paste(results$DateGMT, results$TimeGMT, sep= " ")
 results$DateTime2 <- as.POSIXct(strptime(results$DateTime2, "%Y-%m-%d %H:%M:%S"), "GMT")
 results$TrackTime2 <- as.double(results$DateTime2)
 
-#could add some max dist filter afte intepolation e.g. if distdiff > x then remove following duplicate rows?
+#filters to remove interp points that are too fast and over land
+results<-results%>%group_by(ID)%>%mutate(Interp=duplicated(UTC.Timestamp))%>%ungroup()
+ggplot(data=results%>%filter(Interp==TRUE))+geom_histogram(aes(x=Vel))
+results<-results%>%filter(! (Interp==TRUE & Vel>15)) # filter out interpolated points if bird is moving over 4m/s i.e. we can't assume it is sitting 
+
+#make spatial and remove colony locations
+results_sf<-st_as_sf(results, coords=c("Longitude", "Latitude"), crs=4326)
+colz<-data.frame(col=c('macca','Broughton','Snares', 'Solander'), 
+                 Longitude=c(158.865774,166.616463,166.584596, 166.903065),
+                 Latitude=c(-54.519617,-48.043338,-48.029019,-46.578857))
+
+colz<-st_as_sf(colz, coords=c("Longitude", "Latitude"), crs=4326)%>%st_buffer(dist=750)
+results$int_colbuf<-lengths(st_intersects(results_sf, colz, sparse = T))
+results<-results%>%filter(! (Interp==TRUE & int_colbuf>0)) # filter out interpolated points if bird is moving over 4m/s i.e. we can't assume it is sitting 
 
 results$DateTime2<-ymd_hms(results$DateTime2, tz="UTC")
 results$local_tz<-tz_lookup_coords(lat=results$Latitude, lon=results$Longitude, method='accurate')
@@ -256,6 +268,7 @@ prop_fly=results%>%group_by(sp, daynight, sit_fly)%>%summarise(n=n())%>%
   ungroup()%>%group_by(sp, daynight)%>%mutate(sum(n))
 
 prop_fly$prop=round(prop_fly$n/prop_fly$`sum(n)`, 2)
+prop_fly%>%select(sp, daynight, sit_fly, prop)%>%pivot_wider(names_from = sit_fly, values_from = prop)
 
 #need to remove points when on land: Macca, Snares and Solander
 
