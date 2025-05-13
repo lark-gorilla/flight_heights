@@ -272,11 +272,6 @@ prop_fly<-prop_fly%>%select(sp, daynight, sit_fly, prop)%>%pivot_wider(names_fro
 
 prop_fly%>%group_by(daynight)%>%summarise_all(mean)
                                                                        
-
-#need to remove points when on land: Macca, Snares and Solander
-
-
-
 results_sf<-st_as_sf(results, coords=c("Longitude", "Latitude"), crs=4326)
 
 tmap_mode("view")
@@ -403,9 +398,9 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 dat_flying<-dat%>%filter(burstID%in%fly_bursts) # select flying only data
 
 #remove some erroneous bursts
-dat_flying<-filter(dat_flying, burstID!=8788)
-dat_flying<-filter(dat_flying, burstID!=11207)
-dat_flying<-filter(dat_flying, burstID!=11306)
+dat_flying<-filter(dat_flying, burstID!=14241727730000)
+dat_flying<-filter(dat_flying, burstID!=14311732129200)
+#dat_flying<-filter(dat_flying, burstID!=11306)?
 
 #summarise
 dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=n_distinct(burstID),mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), median=median(alt_DS),
@@ -413,7 +408,7 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
                                         q25=quantile(alt_DS, 0.25), q75=quantile(alt_DS, 0.75),
                                         q5=quantile(alt_DS, 0.05), q95=quantile(alt_DS, 0.95),
                                         q1=quantile(alt_DS, 0.01), q99=quantile(alt_DS, 0.99))
-#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_mar2025.csv')
+#write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_mar2025_updatedapproach.csv')
 #ignore min values as dives!
 
 dat_flying$sp<-as.factor(dat_flying$sp)
@@ -479,3 +474,65 @@ dat%>%filter((Speed..km.h./3.6)>4)%>%group_by(sp)%>%summarise(mn_alt=mean(alt_DS
 
 ggplot(data=dat%>%filter((Speed..km.h./3.6)>4))+geom_density(aes(x=alt_DS, colour=sp), fill=NA)+
   theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(limits=c(-20, 100))
+
+#calculate overlap of flight heights and residence time INSIDE: project, declared area, 200m shelf and outside shelf 
+
+results_sf<-st_as_sf(results, coords=c("Longitude", "Latitude"), crs=4326)
+flying_sf<-st_as_sf(dat_flying, coords=c("Longitude", "Latitude"), crs=4326)
+
+seadragon<-st_read('C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment/ApplicationExtent_Proposed_24022023.shp')
+declared<-st_read('C:/Users/mmil0049/OneDrive - Monash University/sourced_data/OffshoreRenewable_Energy_Infrastructure_Regions_-7255248435075607356/Offshore_Renewable_Energy_Infrastructure_Regions.shp')
+declared<-filter(declared, Region=='Gippsland' & Status=='Superceded') #use original declared area
+shelf200<-st_read('C:/Users/mmil0049/OneDrive - Monash University/sourced_data/200_contour_SE_aus_single.shp')
+
+seadragon<-st_transform(seadragon, crs=4326)
+declared<-st_transform(declared, crs=4326)
+
+sf_use_s2(TRUE)
+results_sf$in_seadragon<-lengths(st_intersects(results_sf, seadragon, sparse = T))
+results_sf$in_declared<-lengths(st_intersects(results_sf, declared, sparse = T))
+sf_use_s2(FALSE);results_sf$in_shelf<-lengths(st_intersects(results_sf, shelf200, sparse = T))
+
+tmap_mode("view")
+tm_shape(shelf200)+tm_polygons(fill=NULL)+
+  tm_shape(declared)+tm_polygons(fill=NULL, col='red')+
+  tm_shape(seadragon)+tm_polygons(fill=NULL, col='blue')+
+  tm_shape(results_sf)+tm_dots(fill=as.character("in_declared"))
+
+sf_use_s2(TRUE)
+flying_sf$in_seadragon<-lengths(st_intersects(flying_sf, seadragon, sparse = T))
+flying_sf$in_declared<-lengths(st_intersects(flying_sf, declared, sparse = T))
+sf_use_s2(FALSE);flying_sf$in_shelf<-lengths(st_intersects(flying_sf, shelf200, sparse = T))
+
+flying_ovl<-cbind(flying_sf%>%st_drop_geometry()%>%filter(in_seadragon>0)%>%group_by(sp)%>%
+  summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)),
+  flying_sf%>%st_drop_geometry()%>%filter(in_declared>0)%>%group_by(sp)%>%
+    summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)),
+  flying_sf%>%st_drop_geometry()%>%filter(in_shelf>0)%>%group_by(sp)%>%
+    summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)),
+  flying_sf%>%st_drop_geometry()%>%filter(in_shelf==0)%>%group_by(sp)%>%
+    summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)))
+
+
+results_sf$sp<-as.factor(results_sf$sp)
+results_sf$sp<-base::factor(results_sf$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
+                            labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+                                      "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross",
+                                      "New Zealand Wandering Albatross"))
+
+residence_ovl<-results_sf%>%st_drop_geometry()%>%group_by(sp)%>%summarise(tot_hrs=n())
+
+residence_ovl<-cbind(results_sf%>%st_drop_geometry()%>%filter(in_seadragon>0)%>%group_by(sp)%>%
+                       summarise(n_bird=n_distinct(ID), n_hrs=n())%>%tidyr::complete(sp, fill=list(0))%>%
+                       mutate(p_tot=n_hrs/residence_ovl$tot_hrs), 
+                     results_sf%>%st_drop_geometry()%>%filter(in_declared>0)%>%group_by(sp)%>%
+                       summarise(n_bird=n_distinct(ID), n_hrs=n())%>%tidyr::complete(sp, fill=list(0))%>%
+                       mutate(p_tot=n_hrs/residence_ovl$tot_hrs), 
+                     results_sf%>%st_drop_geometry()%>%filter(in_shelf>0)%>%group_by(sp)%>%
+                       summarise(n_bird=n_distinct(ID), n_hrs=n())%>%tidyr::complete(sp, fill=list(0))%>%
+                       mutate(p_tot=n_hrs/residence_ovl$tot_hrs), 
+                     results_sf%>%st_drop_geometry()%>%filter(in_shelf==0)%>%group_by(sp)%>%
+                       summarise(n_bird=n_distinct(ID), n_hrs=n())%>%tidyr::complete(sp, fill=list(0))%>%
+                       mutate(p_tot=n_hrs/residence_ovl$tot_hrs)) 
+
+#write.csv(cbind(residence_ovl, flying_ovl), 'reporting/final_reporting_nov24/residence_height_table_mar2025_updatedapproach.csv')
