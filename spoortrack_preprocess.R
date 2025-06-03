@@ -91,9 +91,14 @@ d1$sp<-base::factor(d1$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE
 
 d1$sp_ID<-factor(paste(d1$sp, d1$ID))
 
-ggplot(data=d1)+
-  geom_rect(aes(xmin=st_dep, xmax=end_dep, ymin=paste(sp,ID), ymax=paste(sp,ID)), col=1, size=3)+
-  scale_x_datetime(date_minor_breaks="month")
+#ggplot(data=d1)+
+#  geom_rect(aes(xmin=st_dep, xmax=end_dep, ymin=paste(sp,ID), ymax=paste(sp,ID)), col=1, size=3)+
+#  scale_x_datetime(date_minor_breaks="month")
+
+d1$dur<-d1$end_dep-d1$st_dep
+
+#write.csv(d1%>%arrange(sp, desc(ID)), "deployemnt_durations_summary.csv", quote=F, row.names=F)
+
 
 #Duration lengths
 d1$end_dep-d1$st_dep
@@ -115,6 +120,8 @@ dat<-dat[dat$burstID%in% id_l[id_l$Freq>299,]$Var1,] # remove bursts less than 2
 
 #remove first row of each burst as first pressure reading sometimes iffy
 dat<-dat%>%group_by(burstID)%>%slice(-1)%>%as.data.frame()
+
+# Run to here, for furst data prep!
 
 dat_sf<-st_as_sf(dat%>%group_by(ID, burstID)%>%summarise_all(first), coords=c("Longitude", "Latitude"), crs=4326)
 dat_sf<-dat_sf%>%arrange(ID, DateTime_AEDT)
@@ -393,9 +400,13 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 
 #### ^^^ ####
 
+#pathway to laod in data (without resample)
+#load("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment/reporting/final_reporting_nov24/seadragon_flight_height_data.RData")
+
 #### Summarise and compare altitude between species  ####
 
 dat_flying<-dat%>%filter(burstID%in%fly_bursts) # select flying only data
+dat_NOTflying<-dat%>%filter(!burstID%in%fly_bursts) # select flying only data
 
 #remove some erroneous bursts
 dat_flying<-filter(dat_flying, burstID!=14241727730000)
@@ -411,11 +422,35 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
 #write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_mar2025_updatedapproach.csv')
 #ignore min values as dives!
 
-dat_flying$sp<-as.factor(dat_flying$sp)
-dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
+### Export data for RPS
+
+dat_NOTflying<-dat_NOTflying%>%group_by(burstID)%>%slice(1)
+dat_NOTflying$sit_fly<-"sitting"
+dat_NOTflying$alt_DS<-NA
+dat_flying$sit_fly<-"flying"
+dat_out<-rbind(dat_flying, dat_NOTflying)%>%arrange(ID, UTC.Timestamp)
+
+dat_out$sp<-as.factor(dat_out$sp)
+dat_out$sp<-base::factor(dat_out$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
                             labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
                                       "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross",
                                       "New Zealand Wandering Albatross"))
+dat_out<-dat_out%>%
+  mutate(flight_height_m = cut(alt_DS, breaks = c(-Inf,seq(0, 50, 1),Inf), labels = paste(c("<0", paste(seq(0, 50, 1), seq(1, 51, 1), sep="-")), "m bin")))
+
+dat_out<-dat_out%>%select(ID, sp, burstID, UTC.Timestamp, Latitude, Longitude, Speed..km.h., Device.Temperature, Pressure, sit_fly, flight_height_m)
+dat_out<-dat_out%>%rename(Tag_ID=ID, Species=sp, Burst_ID=burstID, UTC_timestamp=UTC.Timestamp, 
+                          Speed_kmh=Speed..km.h., Temperature_degC=Device.Temperature, Pressure_pa=Pressure,
+                          Sit_or_fly=sit_fly, Flight_height_m=flight_height_m)
+
+#write.csv(dat_out, 'reporting/final_reporting_nov24/biologger_data_RPS.csv', quote=F, row.names=F)
+
+## Making plots
+dat_flying$sp<-as.factor(dat_flying$sp)
+dat_flying$sp<-base::factor(dat_flying$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBAL', "IYNA",'NGPE', "SGPE","WAAL", "NZAL"),
+                         labels= c('White-capped Albatross', 'Shy Albatross', "Buller's Albatross", 'Black-browed Albatross',
+                                   "Indian Yellow-nosed Albatross",'Northern Giant-Petrel', "Southern Giant-Petrel", "Wandering Albatross",
+                                   "New Zealand Wandering Albatross"))
 
 #bin into 1m bands
 bins_1m<-dat_flying%>%group_by(sp)%>%
