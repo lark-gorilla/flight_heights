@@ -91,6 +91,68 @@ dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
 # all flights in day!
 #### ^^ ####
 
+
+#### Sensitivity test p0 method ####
+# split each burst into 15 sec segments
+dat<-dat%>%group_by(burstID)%>%
+  mutate(seq15=rep(1:floor(n()/15), 15)%>%sort()%>%c(rep(floor(n()/15), (n()-(floor(n()/15)*15)))))
+
+dat<-dat%>%group_by(burstID)%>%mutate(p0_99=quantile(pres_pa, probs=0.99))
+dat<-dat%>%group_by(burstID, seq15)%>%mutate(p0_seq15=max(pres_pa)) # setting 15 sec sequences to max against the 99th means 1/2 seqs will be greater
+
+ggplot(data=dat%>%filter(burstID==  '08611854_01_29'))+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa))+
+  geom_line(aes(x=DateTime_AEDT, y=p0_99), col=2)+geom_line(aes(x=DateTime_AEDT, y=p0_seq15), col=3) # ok doing what its supposed to
+
+#summarise diff
+sens_sumr<-dat%>%mutate(p0_diff=p0_99-p0_seq15)%>%group_by(ID, burstID, class, seq15)%>%
+  summarise(temp=first(temp), p0_99=first(p0_99), p0_seq15=first(p0_seq15), p0_diff=first(p0_diff))%>%ungroup()%>%group_by(ID, burstID, class)%>%
+  mutate(mean_p0_diff=mean(p0_diff), med_p0_diff=median(p0_diff))
+
+sens_sumr$p0_alt<-(-1*  # *-1 flips negative/positive values
+           ((k*(sens_sumr$temp+273.15))/(m*g))*log(sens_sumr$p0_seq15/sens_sumr$p0_99))
+
+
+
+ggplot(data=sens_sumr%>%filter(class %in% c("T", "L")))+geom_histogram(aes(x=p0_diff))
+ggplot(data=sens_sumr%>%filter(class %in% c("T", "L")&ID==8611649))+
+  geom_histogram(aes(x=p0_diff))+facet_wrap(~burstID, scales='free')
+
+ggplot()+geom_histogram(data=sens_sumr%>%filter(class %in% c("T", "L")), aes(x=p0_diff))+
+  geom_vline(data=sens_sumr%>%filter(class %in% c("T", "L"))%>%group_by(ID)%>%
+               summarise(med_p=median(p0_diff)), aes(xintercept=med_p), col=3)+
+  facet_wrap(~ID, scales='free')
+
+ggplot()+geom_histogram(data=sens_sumr%>%filter(class %in% c("T", "L")), aes(x=p0_alt))+
+  geom_vline(data=sens_sumr%>%filter(class %in% c("T", "L"))%>%group_by(ID)%>%
+               summarise(med_alt=median(p0_alt)), aes(xintercept=med_alt), col=3)+
+  facet_wrap(~ID, scales='free')
+
+#check bursts with large difference
+for(i in sens_sumr%>%filter(class %in% c("T", "L")& p0_alt>5)%>%pull(burstID)%>%unique())
+{
+  print(ggplot(data=dat%>%filter(burstID==  i))+
+    geom_line(aes(x=DateTime_AEDT, y=pres_pa))+
+      geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly))+
+    geom_line(aes(x=DateTime_AEDT, y=p0_99), col=2)+geom_line(aes(x=DateTime_AEDT, y=p0_seq15), col=3)+ggtitle(i)) 
+print(dat%>%filter(burstID==  i)%>%as.data.frame()%>%head(1))
+  readline("")  
+} # ok looks good
+
+## Now calculate flight heights using p0_99, p0_seq15,
+## p0_diffBurst (median diff between p0_99 and p_seq15 across each burst),
+## p0_diffLogger (median diff between p0_99 and p_seq15 across all bursts per logger)
+
+dat$p0_99_alt<-(-1*  # *-1 flips negative/positive values
+                     ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_99))
+dat$p0_seq15_alt<-(-1*  # *-1 flips negative/positive values
+                  ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_seq15))
+
+
+
+
+#### ^^ ####
+
 #### Calculation of flight height using dynamic soaring method and correction to GPS ####
 
 # barometric formula (Berberan Santos et al. 1997)
