@@ -2,6 +2,7 @@
 
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 library(rayshader)
 library(patchwork)
 library(lubridate)
@@ -16,6 +17,8 @@ library(figpatch)
 library(e1071)
 library(fitdistrplus)
 library(car)
+library(zoo)
+library(pracma)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -101,7 +104,54 @@ dat<-dat %>% group_by(burstID) %>%
 ### ~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
 #make flying subset for flight height analyses
-dat_flying<-dat%>%filter(class %in% c("T", "L"))
+dat_flying<-dat%>%filter(class %in% c("T", "L"))%>%ungroup()
+
+#### ^^ ####
+
+#### dynamic soaring cycle segmentation ####
+dat_flying$ds_seg_pressure<-NA
+dat_flying$ds_seg_gps<-NA
+for(i in unique(dat_flying$burstID))
+{
+i_burst<-dat_flying[dat_flying$burstID==i,]
+
+# don't detrend before
+#loess_fit <- loess(alt_gps ~ as.numeric(DateTime_AEDT), data = i_burst, span = 0.75)
+#detrended <- i_burst$alt_gps - predict(loess_fit)
+  
+pres_smth <- rollmean(i_burst$pres_pa, k = 3, fill = NA) # apply moving window 3-pt
+gps_smth <- rollmean(i_burst$alt_gps, k = 3, fill = NA)
+
+# find valleys
+# negative sign finds valleys (for pressure only)
+pres_valz<-findpeaks(-pres_smth, minpeakdistance = 5, nups=2, ndowns=2) 
+# 5 sec = min DS duration from Schoombie et al 2023.
+gps_valz<-findpeaks(gps_smth, minpeakdistance = 5, nups=2, ndowns=2)
+
+i_burst[pres_valz[,4]%>%sort(),]$ds_seg_pressure<-seq(1:length(pres_valz[,4]))
+i_burst[gps_valz[,4]%>%sort(),]$ds_seg_gps<-seq(1:length(gps_valz[,4]))
+
+i_burst$ds_seg_pressure[1]<-0
+i_burst<-i_burst%>%fill(ds_seg_pressure, .direction='down')
+i_burst$ds_seg_gps[1]<-0
+i_burst<-i_burst%>%fill(ds_seg_gps, .direction='down')
+
+dat_flying[dat_flying$burstID==i,]$ds_seg_pressure<-i_burst$ds_seg_pressure
+dat_flying[dat_flying$burstID==i,]$ds_seg_gps<-i_burst$ds_seg_gps
+print(i)
+
+#cols = rainbow(nrow(pres_valz)+1, s=.6, v=.9)[sample(1:nrow(pres_valz)+1,nrow(pres_valz)+1,replace=T)]
+#p1<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=pres_smth))+
+#  geom_point(aes(x=i_burst$DateTime_AEDT, y=pres_smth, col=factor(i_burst$ds_seg_pressure)))+
+#  scale_colour_manual(values=cols)+scale_y_reverse()
+
+#cols = rainbow(nrow(gps_valz)+1, s=.6, v=.9)[sample(1:nrow(gps_valz)+1,nrow(gps_valz)+1,replace=T)]
+#p2<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=gps_smth))+
+#  geom_point(aes(x=i_burst$DateTime_AEDT, y=gps_smth, col=factor(i_burst$ds_seg_gps)))+
+#  scale_colour_manual(values=cols)
+#print(p1/p2)
+#readline("")
+}
 
 #### ^^ ####
 
@@ -117,14 +167,63 @@ g=9.80665
 dat_flying<-dat_flying%>%group_by(burstID)%>%
   mutate(seq15=rep(1:floor(n()/15), 15)%>%sort()%>%c(rep(floor(n()/15), (n()-(floor(n()/15)*15)))))
 
-# check max instead of 99th (any dives?)
 dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) # use absolute maximum
 dat_flying<-dat_flying%>%group_by(burstID, seq15)%>%mutate(p0_seq15=max(pres_pa)) # setting 15 sec sequences to max against the 99th means 1/2 seqs will be greater
 
+dat_flying<-dat_flying%>%mutate(p0_diff=p0_mx-p0_seq15)
+
+
+hyp_pdiff_draw=5
 ggplot(data=dat_flying%>%filter(burstID=='08611854_01_37'))+
-  geom_line(aes(x=DateTime_AEDT, y=pres_pa))+
-  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col=2)+geom_line(aes(x=DateTime_AEDT, y=p0_seq15), col=3)+
-  scale_y_reverse()# ok doing what its supposed to
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa))+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col=2)+
+ geom_line(aes(x=DateTime_AEDT, y=p0_seq15), col=3)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_seq15+hyp_pdiff_draw), col=4)+scale_y_reverse()
+
+# remember p0_mx = max(seq15)
+ggplot(data=dat_flying%>%filter(burstID=='08611854_01_37'))+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa), col=2, alpha=0.5)+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa+(p0_mx-p0_seq15)), col=3, alpha=0.5)+
+  geom_line(aes(x=DateTime_AEDT, y=pres_pa+(p0_mx-p0_seq15-hyp_pdiff_draw)), col=4)+
+  
+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col=2)+
+  geom_line(aes(x=DateTime_AEDT, y=(p0_seq15+p0_diff)), col=3, linetype='dashed')+
+  geom_line(aes(x=DateTime_AEDT, y=p0_seq15+p0_diff+hyp_pdiff_draw-hyp_pdiff_draw), col=4,linetype='dotted')+
+  scale_y_reverse()
+
+
+
+fl_ht_sim<-function(x){(-1*  # *-1 flips negative/positive values
+                          ((k*(i_burst['temp']+273.15))/(m*g))*log(i_burst['pres_pa']/(i_burst['p0_seq15']+x)))}
+
+error_ht<-function(x){(-1*  # *-1 flips negative/positive values
+                          ((k*(i_burst['temp']+273.15))/(m*g))*log(i_burst['p0_seq15']/(i_burst['p0_seq15']+x)))}
+
+base_ht<-function(x){(-1*  # *-1 flips negative/positive values
+                          ((k*(i_burst['temp']+273.15))/(m*g))*log(i_burst['pres_pa']/(i_burst['p0_seq15'])))}
+
+hts_out<-NULL
+for(i in unique(dat_flying$burstID))
+{
+set.seed(123)
+i_burst<-dat_flying[dat_flying$burstID==i,]
+
+s1<-sample(unique(i_burst$p0_diff), size=1000, replace=T) 
+
+matx1<-as.matrix(do.call("cbind", lapply(s1, FUN=fl_ht_sim)) ) 
+
+base_ht<-(-1*  # *-1 flips negative/positive values
+                            ((k*(i_burst$temp+273.15))/(m*g))*log(i_burst$pres_pa/i_burst$p0_seq15))
+
+matx2<-base_ht+as.matrix(do.call("cbind", lapply(s1, FUN=error_ht)) )  
+
+#matx1[1:5, 1:5]; matx2[1:5, 1:5] # using pressure difference (pa) vs altitude difference (m) yields same results.  
+
+df1<-data.frame(ID=i_burst$ID[1], burstID=i, DateTime_AEDT=i_burst$DateTime_AEDT,
+                mean=rowMeans(matx2) , p5th=apply(matx2, 1, FUN=function(x){quantile(x, 0.025)}),
+                p95th=apply(matx2, 1, FUN=function(x){quantile(x, 0.975)}))
+print()
+hts_out<-rbind(hts_out, df1)
+}
 
 #summarise diff
 sens_sumr<-dat_flying%>%mutate(p0_diff=p0_mx-p0_seq15)%>%group_by(ID, burstID, class, seq15)%>%
@@ -193,7 +292,6 @@ ggplot(data=dat_flying%>%filter(burstID=='08611854_01_37'))+
   geom_line(aes(x=DateTime_AEDT, y=pres_pa+(p0_mx-p0_seq15)), col=3, alpha=0.3)+
   geom_line(aes(x=DateTime_AEDT, y=pres_pa+(p0_mx-p0_seq15-hyp_pdiff_draw)), col=4)+
   scale_y_reverse()
-
 
 #### ^^ ####
 
