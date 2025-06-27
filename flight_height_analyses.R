@@ -119,15 +119,15 @@ i_burst<-dat_flying[dat_flying$burstID==i,]
 # don't detrend before
 #loess_fit <- loess(alt_gps ~ as.numeric(DateTime_AEDT), data = i_burst, span = 0.75)
 #detrended <- i_burst$alt_gps - predict(loess_fit)
-  
+
 pres_smth <- rollmean(i_burst$pres_pa, k = 3, fill = NA) # apply moving window 3-pt
 gps_smth <- rollmean(i_burst$alt_gps, k = 3, fill = NA)
 
 # find valleys - could possibly be optimised including zero-crossing too
 # negative sign finds valleys (for pressure only)
-pres_valz<-findpeaks(-pres_smth, minpeakdistance = 5, nups=2, ndowns=2) 
-# 5 sec = min DS duration from Schoombie et al 2023.
-gps_valz<-findpeaks(gps_smth, minpeakdistance = 5, nups=2, ndowns=2)
+pres_valz<-findpeaks(-pres_smth, minpeakdistance = 5, nups=2, ndowns=2, zero='+') 
+# 5 sec = min peak-peak distance min DS duration from Schoombie et al 2023.
+gps_valz<-findpeaks(gps_smth, minpeakdistance = 5, nups=2, ndowns=2, zero='+')
 
 i_burst[pres_valz[,4]%>%sort(),]$ds_seg_pressure<-seq(1:length(pres_valz[,4]))
 i_burst[gps_valz[,4]%>%sort(),]$ds_seg_gps<-seq(1:length(gps_valz[,4]))
@@ -142,17 +142,31 @@ dat_flying[dat_flying$burstID==i,]$ds_seg_gps<-i_burst$ds_seg_gps
 print(i)
 
 #cols = rainbow(nrow(pres_valz)+1, s=.6, v=.9)[sample(1:nrow(pres_valz)+1,nrow(pres_valz)+1,replace=T)]
-#p1<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=pres_smth))+
-#  geom_point(aes(x=i_burst$DateTime_AEDT, y=pres_smth, col=factor(i_burst$ds_seg_pressure)))+
+#p1<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=i_burst$pres_pa))+
+#  geom_point(aes(x=i_burst$DateTime_AEDT, y=i_burst$pres_pa, col=factor(i_burst$ds_seg_pressure)))+
 #  scale_colour_manual(values=cols)+scale_y_reverse()
 
 #cols = rainbow(nrow(gps_valz)+1, s=.6, v=.9)[sample(1:nrow(gps_valz)+1,nrow(gps_valz)+1,replace=T)]
-#p2<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=gps_smth))+
-#  geom_point(aes(x=i_burst$DateTime_AEDT, y=gps_smth, col=factor(i_burst$ds_seg_gps)))+
+#p2<-ggplot()+geom_line(aes(x=i_burst$DateTime_AEDT, y=i_burst$alt_gps))+
+#  geom_point(aes(x=i_burst$DateTime_AEDT, y=i_burst$alt_gps, col=factor(i_burst$ds_seg_gps)))+
 #  scale_colour_manual(values=cols)
 #print(p1/p2)
 #readline("")
 }
+
+#summarise DS durations
+dat_flying%>%group_by(burstID, ds_seg_pressure)%>%summarise(seg_dur=n())%>%
+  ungroup()%>%summarise(mn_seg_dur=mean(seg_dur), sd_seg_dur=sd(seg_dur))
+
+dat_flying%>%group_by(burstID, ds_seg_gps)%>%summarise(seg_dur=n())%>%
+  ungroup()%>%summarise(mn_seg_dur=mean(seg_dur), sd_seg_dur=sd(seg_dur))
+
+wilcox.test(x= dat_flying%>%group_by(burstID, ds_seg_gps)%>%summarise(seg_dur=n())%>%pull(seg_dur),
+            y=dat_flying%>%group_by(burstID, ds_seg_pressure)%>%summarise(seg_dur=n())%>%
+              group_by(burstID)%>%summarise(mn_seg_dur=mean(seg_dur))%>%pull(mn_seg_dur))
+
+#Wilcoxon rank sum test with continuity correction
+#W = 76295, p-value = 1.031e-06
 
 #### ^^ ####
 
@@ -230,7 +244,7 @@ dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitud
                                         min=min(Altitude), max=max(Altitude),
                                         q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75), skew=skewness(Altitude))
 # make plot
-cols <- c('#A60613', '#E64613','#B68663','#00A9FF')
+cols <- c('#dc267f', '#fe6100','#648fff','#ffb000')
 
 cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
               grDevices::adjustcolor(cols[2], alpha.f = 0.75),
@@ -525,6 +539,21 @@ p1<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_A
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
   theme(axis.text=element_text(size=15),axis.title=element_text(size=17))
 
+i_burst<-dat_flying[dat_flying$burstID=='08611854_04_122',]
+
+cols=c(rep(c('black', "darkgray"), 12), 'black')
+p1<-ggplot(data=i_burst)+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1,colour=factor(ds_seg_pressure)), size=1)+
+  scale_y_reverse()+
+  labs(y="Pressure (Pa) - reversed", x="Time")+
+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col='#fe6100', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_ds_seg), col='#dc267f', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_gam), col='#648fff', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col='#fe6100', linetype='dashed', size=1)+
+  scale_colour_manual(values=cols)+
+  theme_bw()+ guides(colour="none")+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
+  theme(panel.grid.minor=element_blank(),axis.text=element_text(size=15),axis.title=element_text(size=17))
+
 p1.5<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+
 geom_point(aes(x=Longitude, y=Latitude, colour=pres_pa))+scale_color_viridis(trans="reverse")+
 labs(x="Longitude", y="Latitude", colour="Pressure\n(Pa)\n\n")+theme_bw()
@@ -532,21 +561,21 @@ plot_gg(p1.5, height=4, width=8, pointcontract = 0.5, sunangle = 40)
 
 render_snapshot("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot2.png", dpi=900, clear = T)
 
-p2<-ggplot(data=dat[dat$burstID=="08611854_04_122",])+geom_line(aes(x=DateTime_AEDT, y=alt_DS, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=alt_DS), size=1)+
-geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='#00A9FF')+
-  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='#00A9FF')+
+p2<-ggplot(data=i_burst)+geom_line(aes(x=DateTime_AEDT, y=alt_p0_gam, group=1), col='#648fff')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_p0_gam), size=1, col='#648fff')+
+geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1), col='#ffb000')+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps), size=1, col='#ffb000')+
   labs(y="Altitude (m)")+
   geom_hline(yintercept=0, linetype='dotted')+theme_bw()+
-  theme(axis.text=element_text(size=15),axis.title=element_text(size=17))+
+  theme(axis.text=element_text(size=15),axis.title=element_text(size=17),panel.grid.minor=element_blank())+
   scale_y_continuous(limits=c(-2, 26), breaks=seq(-2,26,2), minor_breaks = NULL)+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
 
 p1.6 <- fig("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/3dplot2.png")
   
 wrap_plots(p1, p1.6, p2, nrow=3)
-p1+p1.6+p2 + plot_layout(nrow=3, heights = c(1,2,1))+ 
-  plot_annotation(tag_levels = 'a',tag_suffix = ')')&theme(plot.tag = element_text(size = 26)) # then export png @ 1400 x 1500 
+p1+p1.6+p2 + plot_layout(nrow=3, heights = c(2,2,1))+ 
+  plot_annotation(tag_levels = 'a',tag_suffix = ')')&theme(plot.tag = element_text(size = 26)) # then export png @ 1400 x 1700 
 # do manually
 p1/p2
 
