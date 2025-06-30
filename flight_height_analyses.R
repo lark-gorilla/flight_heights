@@ -342,82 +342,8 @@ test(em1, adjust="bonferroni")
 
 #### ^^ ####
 
-#### Calculation of flight height using dynamic soaring method and correction to GPS ####
 
-# barometric formula (Berberan Santos et al. 1997)
-#h=((k*T)/(m*g))*ln(p/p0)
-k=8.31432
-m=0.0289644
-g=9.80665
-
-#Add -9m correction to GPS elevation 
-dat$alt_gps<-dat$alt-9
-
-dat$index<-1:nrow(dat)
-dat$p0<-0
-
-dat$alt_DS<-NA
-for (i in unique(dat$burstID))
-{
-  # original method - 95% upper quantile of pressure to set p0 for entire burst
-  dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
-  
-  if(unique(dat[dat$burstID==i,]$class)=="A") #separate p0 values for sitting vs flying in takeoff/landing bursts
-        {
-        dat[dat$burstID==i &dat$sit_fly=="sit",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="sit",]$pres_pa, probs=0.50)
-        dat[dat$burstID==i &dat$sit_fly=="fly",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="fly",]$pres_pa, probs=0.95)
-        }
-  if(unique(dat[dat$burstID==i,]$class)=="S") #Use 0.5 for wave height to assume mean sea level
-  {
-    dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.50)
-  }
-}
-  
-dat$alt_DS<-(-1*  # *-1 flips negative/positive values
-                                    ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
-
-#### ^^^ ####
-
-#### Calculation of flight height using satellite ocean data (Johnston et al 2023) + 9m GPS offset (final line of code) ####
-
-# Work out difference between pressure of sitting bursts and ECMWF.ERA5.SL.Mean.Sea.Level.Pressure
-# then use value to calibrate satellite data to 'true' surface pressure (p0). Apply 'true'
-# p0 value sitting bursts to flying bursts within 1 day. Nearest (in time) sitting burst has priority
-
-# analysis run per logger as each will have unique sensor calibration
-
-#### vis helping plots ^^^ ####
-#ggplot(data=dat)+geom_point(aes(x=pres_pa, y=mean_sea_level_pressure))+
-  #geom_abline()+facet_wrap(~class, scales="free")
-
-#ggplot(data=dat%>%filter(class=="S")%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa), col='red')+
-#  facet_wrap(~ID, scales="free")
-
-# check each individually
-#p1<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-#p2<-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
-
-#p1/p2
-
-#p1<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-#p2<-ggplot(data=dat%>%filter(ID==8611854 )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
-
-#p1/p2
-
-#p1<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=embc, shape=class))
-#p2<-ggplot(data=dat%>%filter(ID==41490936   )%>%mutate(index=1:nrow(.)))+geom_point(aes(x=index, y=mean_sea_level_pressure), col="green")+
-#  geom_point(aes(x=index, y=pres_pa, colour=sit_fly, shape=class))
-
-#p1/p2
-#### ^^^ ####
-
-# Ok use sitting points 
+#### Check suitability floating-satellite method (Johnston et al 2023) ####
 
 dat<-dat%>%group_by(burstID)%>%mutate(mean_sea_level_pressure =mean(mean_sea_level_pressure ,na.rm = T))%>%
   ungroup()%>%as.data.frame() # average satellite pressure dat per burst
@@ -432,40 +358,26 @@ dat[dat$class %in% c('A', 'S') & dat$sit_fly=='sit',]$sat_sit_pdiff<-
 dat<-dat%>%group_by(burstID)%>%
   mutate(burstID_sat_sit_pdiff=mean(sat_sit_pdiff,na.rm = T))%>%ungroup()%>%as.data.frame()
 
-dat$nearest_sat_sit_pdiff<-NA
+sumr<-NULL
 for(i in unique(dat$burstID))
 {
   dtemp<-dat%>%filter(burstID==i)
   IDtemp<-dat%>%filter(ID==unique(dtemp$ID)) # get nearest from same logger
   sit_burst<-IDtemp[! is.na(IDtemp$burstID_sat_sit_pdiff),] # only bursts with sitting diffs
-  if(min(abs((sit_burst$DateTime_AEDT- 
-               median(dtemp$DateTime_AEDT))))>hours(24)){next} #if no sitting within 1 day skip
   
- appl_diff<-sit_burst[which.min(abs((sit_burst$DateTime_AEDT-median(dtemp$DateTime_AEDT)))),]$burstID_sat_sit_pdiff
-
- dat[dat$burstID==i,]$nearest_sat_sit_pdiff<-appl_diff
+  out1<-data.frame(burstID=i, ID=unique(dtemp$ID), class=unique(dtemp$class), 
+                   min_t=min(abs((sit_burst$DateTime_AEDT- 
+              median(dtemp$DateTime_AEDT)))))
+  sumr<-rbind(sumr, out1)
 }
 
-# check outputs - reproduce Johnston fig 2
-ggplot(data=dat%>%filter(ID==08611649)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_line(aes(x=index, y=pres_pa), colour='black')+
-  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
-
-ggplot(data=dat%>%filter(ID==8611854)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_line(aes(x=index, y=pres_pa), colour='black')+
-  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
-
-ggplot(data=dat%>%filter(ID==41490936)%>%mutate(index=1:nrow(.)))+geom_line(aes(x=index, y=mean_sea_level_pressure), col="green")+
-  geom_line(aes(x=index, y=pres_pa), colour='black')+
-  geom_line(aes(x=index, y=ifelse(is.na(sat_sit_pdiff),mean_sea_level_pressure+nearest_sat_sit_pdiff,mean_sea_level_pressure+sat_sit_pdiff)), colour='orange')
-# looks good
-
-#calculate p0 and alt for satellite ocean data method
-dat$p0_SO<-ifelse(is.na(dat$sat_sit_pdiff),dat$mean_sea_level_pressure+dat$nearest_sat_sit_pdiff,dat$mean_sea_level_pressure+dat$sat_sit_pdiff)
-dat$alt_SO<-(-1*  # *-1 flips negative/positive values
-               ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0_SO))
-
-
+sumr$min_t<-as.numeric(sumr$min_t)
+ggplot(data=sumr%>%filter(class%in%c('T', 'L')))+geom_histogram(aes(x=min_t/3600))+facet_wrap(~ID)
+summary(sumr[sumr$class%in%c('T', 'L'),]$min_t/3600)
+# Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+# 0.9339  0.9644  1.9719  6.7607 14.8675 23.9706 - not suitable to large time gap
+sd(sumr[sumr$class%in%c('T', 'L'),]$min_t/3600) 
+# 7.652972
 #### ^^^ ####
 
 
