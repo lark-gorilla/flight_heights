@@ -172,18 +172,14 @@ wilcox.test(x= dat_flying%>%group_by(burstID, ds_seg_gps)%>%summarise(seg_dur=n(
 
 #### Sensitivity tests for p0 method ####
 
-# split each burst into 15 sec segments
-dat_flying<-dat_flying%>%group_by(burstID)%>%
-  mutate(seq15=rep(1:floor(n()/15), 15)%>%sort()%>%c(rep(floor(n()/15), (n()-(floor(n()/15)*15)))))
+# use absolute maximum
+dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) 
 
-dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) # use absolute maximum
-dat_flying<-dat_flying%>%group_by(burstID, seq15)%>%mutate(p0_seq15=max(pres_pa)) # setting 15 sec sequences 
-
+# per dynamic soaring segment (above loop)
 temp_d<-dat_flying %>% group_by(burstID) %>% slice(c(1,1:(n()-1)))%>%ungroup()%>%arrange(ID, burstID,ds_seg_pressure)
 dat_flying<-dat_flying%>%ungroup()%>%arrange(ID, burstID,ds_seg_pressure) %>%mutate(pres_pa_1=temp_d$pres_pa)
 dat_flying<-dat_flying%>%group_by(burstID, ds_seg_pressure)%>%mutate(p0_ds_segSRT=max(pres_pa_1), p0_ds_segEND=max(pres_pa),
-                                                                     p0_ds_seg=max(p0_ds_segSRT, p0_ds_segEND) ) # setting dynamic soaring segments (above loop)
-
+                                                                     p0_ds_seg=max(p0_ds_segSRT, p0_ds_segEND) ) 
 #calculate most likely p0
 dat_flying$p0_diff<-dat_flying$p0_mx-dat_flying$p0_ds_seg
 dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_gam=
@@ -223,12 +219,17 @@ dat_flying$alt_p0_error<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying
 
 ggplot(data=dat_flying)+geom_histogram(aes(x=alt_p0_error), binwidth=0.5)+
   geom_vline(data=dat_flying%>%summarise(med_er=median(alt_p0_error)),aes(xintercept=med_er), col=3)+
-  scale_x_continuous(breaks=0:10)
+  scale_x_continuous(breaks=0:11)+theme_bw()+xlab("Error in altimeter flight height estimates (m)")+ylab("Count of datapoints")
 
 ggplot(data=dat_flying)+geom_histogram(aes(x=alt_p0_error), binwidth=0.5)+
   geom_vline(data=dat_flying%>%group_by(ID)%>%summarise(med_er=median(alt_p0_error)),aes(xintercept=med_er), col=3)+
-  scale_x_continuous(breaks=0:10)+
-  facet_wrap(~ID, scales='free')
+  scale_x_continuous(breaks=0:11)+ theme_bw()+
+  facet_wrap(~ID, scales='free_y')+xlab("Error in altimeter flight height estimates (m)")+ylab("Count of datapoints")
+
+summary(dat_flying$alt_p0_error)
+#   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
+#  0.000   1.085   2.087   2.376   3.270  10.842
+dat_flying%>%group_by(ID)%>%summarise(med_er=median(alt_p0_error))
 
 #### ^^ ####
 
@@ -243,13 +244,25 @@ dat_comp<-rbind(data.frame(method='Dynamic soaring - lwr bound', Altitude=dat_fl
 dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
                                         min=min(Altitude), max=max(Altitude),
                                         q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75), skew=skewness(Altitude))
-# make plot
-cols <- c('#dc267f', '#fe6100','#648fff','#ffb000')
 
-cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
-              grDevices::adjustcolor(cols[2], alpha.f = 0.75),
-              grDevices::adjustcolor(cols[3], alpha.f = 0.75),
-              grDevices::adjustcolor(cols[4], alpha.f = 0.75))
+#method                      mn_alt sd_alt median    min   max   q25   q75   skew
+#<chr>                        <dbl>  <dbl>  <dbl>  <dbl> <dbl> <dbl> <dbl>  <dbl>
+#1 Dynamic soaring - lwr bound   3.23   2.70   2.67   0     26.1  1.26  4.55 1.46  
+#2 Dynamic soaring - mean        4.42   2.89   3.86  -1.61  25.9  2.36  5.91 1.20  
+#3 Dynamic soaring - upr bound   5.61   3.24   4.97   0     26.1  3.28  7.32 1.09  
+#4 GPS                           5.10   9.72   4    -63     89    0     9    0.0607
+
+# skewness stats
+test.skew(dat_comp%>%filter(method=='GPS')%>%pull(Altitude))
+
+
+# make plot
+cols <- c('#dc267f','#648fff','#fe6100','#ffb000')
+
+cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 1),
+              grDevices::adjustcolor(cols[2], alpha.f = 1),
+              grDevices::adjustcolor(cols[3], alpha.f = 1),
+              grDevices::adjustcolor(cols[4], alpha.f = 1))
 
 ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size=1.5)+
   theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+geom_hline(yintercept = 0,size=1.5)+
@@ -257,88 +270,31 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   scale_colour_manual(values = cols.alpha)+coord_cartesian(xlim=c(-20, 40))+
   theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
         legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
-  scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters zeroed with\ndynamic soaring (lwr)",
-                                                                                     "Altimeters zeroed with\ndynamic soaring (mean)",
-                                                                                     "Altimeters zeroed with\ndynamic soaring (upr)",
+  scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters (lower scenario)",
+                                                                                     "Altimeters (most likely scenario)",
+                                                                                     "Altimeters (upper scenario)",
                                                                                      "GPS Altitude"))+labs(x="Flight height (m)", y="Density")
 
-# Now run stats on difference data to keep things normal
 
-dat_diff<-rbind(data.frame(method='Dynamic soaring - GPS', Altitude=dat_flying$alt_DS-dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Dynamic soaring - Satellite ocean', Altitude=dat_flying$alt_DS-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS - Satellite ocean', Altitude=dat_flying$alt_gps-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
+wilcox.test(x= dat_flying$alt_gps,
+            y=dat_flying$alt_p0_gam, paired=T)
 
+#Wilcoxon signed rank test with continuity correction
 
-m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_diff)
-boxplot(residuals(m1, type='pearson')~dat_diff$method)
-m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_diff)
+#data:  dat_flying$alt_gps and dat_flying$alt_p0_gam
+#V = 169251078, p-value = 1.703e-08
 
-AIC(m1, m2) # logger ID as RE not as good
-resid_panel(m1)
-summary(m1)
+wilcox.test(x= dat_flying$alt_gps,
+            y=dat_flying$alt_p0_mx, paired=T)
 
+#data:  dat_flying$alt_gps and dat_flying$alt_p0_mx
+#V = 138154406, p-value < 2.2e-16
 
-#OLDER
+wilcox.test(x= dat_flying$alt_gps,
+            y=dat_flying$alt_p0_ds_seg, paired=T)
 
-# compare p0 values between dynamic soaring and sitting method
-dat_fly_first<-dat_flying%>%group_by(burstID)%>%summarise_all(first)
-boxplot(dat_fly_first$p0,dat_fly_first$p0_SO)
-summary(dat_fly_first$p0);summary(dat_fly_first$p0_SO)
-t.test(dat_fly_first$p0_SO,dat_fly_first$p0, paired=T)
-mean(dat_fly_first$p0_SO); sd(dat_fly_first$p0_SO)
-mean(dat_fly_first$p0); sd(dat_fly_first$p0)
-# end of p0 comparison
-
-# do Levene Test to test for homogeneity of variance (precision between GPS and DS altitudes)
-test_dat<-rbind(data.frame(val=dat_flying$alt_DS, grp="ds"), data.frame(val=dat_flying$alt_gps, grp="gps"))
-leveneTest(val ~ grp, data = test_dat)
-
-cor.test(dat_flying$alt_DS, dat_flying$alt_gps)
-ggplot(data=dat_flying)+geom_point(aes(x=alt_gps, y=alt_DS))
-
-dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
-
-#summarise
-dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
-                                        min=min(Altitude), max=max(Altitude),
-                                        q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75), skew=skewness(Altitude))
-# make plot
-cols <- c("#000000",'#00A9FF','#E68613')
-
-cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
-              grDevices::adjustcolor(cols[2], alpha.f = 0.75),
-              grDevices::adjustcolor(cols[3], alpha.f = 0.75))
-
-ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size=2)+
-  theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(breaks=seq(-60,60,2))+
-  scale_colour_manual(values = cols.alpha)+coord_cartesian(xlim=c(-20, 40))+
-  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
-        legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
-  scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters zeroed with\ndynamic soaring", 
-                                                                                     "GPS Altitude", "Altimeters zeroed from\nsitting at sea or satellite"))+labs(x="Flight height (m)", y="Density")
-
-# Now run stats on difference data to keep things normal
-
-dat_diff<-rbind(data.frame(method='Dynamic soaring - GPS', Altitude=dat_flying$alt_DS-dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Dynamic soaring - Satellite ocean', Altitude=dat_flying$alt_DS-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS - Satellite ocean', Altitude=dat_flying$alt_gps-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
-
-
-m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_diff)
-boxplot(residuals(m1, type='pearson')~dat_diff$method)
-m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_diff)
-
-AIC(m1, m2) # logger ID as RE not as good
-resid_panel(m1)
-summary(m1)
-
-anova(m1)
-em1<-emmeans(m1, specs='method')
-em1
-test(em1, adjust="bonferroni")
-
+#data:  dat_flying$alt_gps and dat_flying$alt_p0_ds_seg
+#V = 198704999, p-value < 2.2e-16
 
 #### ^^ ####
 
