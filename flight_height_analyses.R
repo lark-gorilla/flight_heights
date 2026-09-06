@@ -341,26 +341,36 @@ sd(sumr[sumr$class%in%c('T', 'L'),]$min_t/3600)
 
 # Using Zero-crossing method in oceanwaves package
 
+# Use floating data only
+dat_floating<-dat%>%filter(class=="S")
+
+# Use max p0 to calc wave height from pressure data - zero crossing doesn't care which p0 is used, 
+# using barometric equation just converts units from pascals to metres to allow comparison with GPS
+dat_floating<-dat_floating%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) 
+k=8.31432
+m=0.0289644
+g=9.80665
+dat_floating$alt_p0_mx<-(-1*((k*(dat_floating$temp+273.15))/(m*g))*log(dat_floating$pres_pa/dat_floating$p0_mx))
+
 zc_summary<-NULL
-for ( i in unique(dat[dat$class%in%c("T", "L", "S"),]$burstID))
+for ( i in unique(dat_floating$burstID))
 {
- tout<-data.frame(class=unique(dat[dat$burstID==i,]$class), burstID=i, 
+ tout<-data.frame(class=unique(dat_floating[dat_floating$burstID==i,]$class), burstID=i, 
                   ds_hsig=NA,ds_hmean=NA, ds_tmean=NA, ds_tsig=NA,
                   gps_hsig=NA,gps_hmean=NA, gps_tmean=NA, gps_tsig=NA)
   
- d1<-waveStatsZC(dat[dat$burstID==i,]$alt_DS, 1,)
+ d1<-waveStatsZC(dat_floating[dat_floating$burstID==i,]$alt_p0_mx, 1,)
   tout$ds_hsig=d1$Hsig
   tout$ds_hmean=d1$Hmean
   tout$ds_tmean=d1$Tmean
   tout$ds_tsig=d1$Tsig
   
-  
   possibleError <-tryCatch(
-    waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,),
+    waveStatsZC(dat_floating[dat_floating$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps, plot=F)$out)%>%pull(alt_gps), 1,),
     error=function(e) e)
   
   if(!inherits(possibleError, "error")){
-  g1<-waveStatsZC(dat[dat$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps)$out)%>%pull(alt_gps), 1,) 
+  g1<-waveStatsZC(dat_floating[dat_floating$burstID==i,]%>%filter(!alt_gps %in% boxplot(alt_gps, plot=F)$out)%>%pull(alt_gps), 1,) 
   tout$gps_hsig=g1$Hsig
   tout$gps_hmean=g1$Hmean
   tout$gps_tmean=g1$Tmean
@@ -369,31 +379,9 @@ for ( i in unique(dat[dat$class%in%c("T", "L", "S"),]$burstID))
   
   zc_summary<-rbind(zc_summary, tout)
 }
-# two altimeter methods identical SO method not run
 
-ggplot(data=zc_summary)+geom_point(aes(x=ds_hmean, y=gps_hmean))+facet_wrap(~class, scales='free')
-ggplot(data=zc_summary)+geom_point(aes(x=ds_tmean, y=gps_tmean))+facet_wrap(~class, scales='free')
-
-na.omit(zc_summary)%>%filter(class!='S')%>%dplyr::select(-c('burstID', 'class'))%>%summarise_all(mean)
-na.omit(zc_summary)%>%filter(class!='S')%>%dplyr::select(-c('burstID', 'class'))%>%summarise_all(sd)
-
-#ds_hsig ds_hmean ds_tmean  ds_tsig     gps_hsig gps_hmean gps_tmean gps_tsig
-#8.018721 5.369986 9.360565 14.20945    9.770262  6.538162  13.35991  22.6568
-
-#ds_hsig ds_hmean ds_tmean  ds_tsig    gps_hsig gps_hmean gps_tmean gps_tsig
-#2.861487 1.870761 2.986462 5.957045    4.39308  2.583361  7.725046 20.26673
-
-# do Levene Test to test for homogeneity of variance
-test_dat<-rbind(data.frame(val=zc_summary[zc_summary$class!="S",]$ds_tmean, grp="ds"),
-                data.frame(val=zc_summary[zc_summary$class!="S",]$gps_tmean, grp="gps"))
-boxplot(val~grp, test_dat)
-
-wilcox.test(x=zc_summary[zc_summary$class!="S",]$ds_tmean, y=zc_summary[zc_summary$class!="S",]$gps_tmean,
-           paired=T, alternative = "less")
-
-# not used
-#leveneTest(val ~ grp, data = test_dat, center='mean')
-#var.test(zc_summary$ds_tmean, zc_summary$gps_tmean, alternative = "less")
+ggplot(data=zc_summary)+geom_point(aes(x=ds_hmean, y=gps_hmean))+coord_cartesian()
+ggplot(data=zc_summary)+geom_point(aes(x=ds_tmean, y=gps_tmean))
 
 #### ^^^ ####
 
@@ -522,24 +510,24 @@ p1/p2/p3
 #### Measuring wave height w/ altimeters and making figure 5  ####
 
 #summarise first
-dat%>%filter(class=="S"& wave_height!="NA")%>%
-  summarise(mn_gps=mean(alt_gps), sd_gps=sd(alt_gps), mn_ds=mean(alt_DS), sd_ds=sd(alt_DS), 
+dat_floating%>%filter(wave_height!="NA")%>%
+  summarise(mn_gps=mean(alt_gps), sd_gps=sd(alt_gps), mn_ds=mean(alt_p0_mx), sd_ds=sd(alt_p0_mx), 
                 mn_wh=mean(wave_height), sd_wh=sd(wave_height)) 
 
-ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
+ggplot(data=dat_floating%>%filter(wave_height!="NA"))+
   geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=wave_height))+geom_line(aes(x=DateTime_AEDT, y=pres_pa))+facet_wrap(~burstID, scales="free")+scale_colour_viridis()
 
-ggplot(data=dat%>%filter(class=="S"& wave_height!="NA"))+
-  geom_point(aes(x=DateTime_AEDT, y=alt_DS), colour='red')+geom_line(aes(x=DateTime_AEDT, y=alt_DS), colour='red')+
+ggplot(data=dat_floating%>%filter(wave_height!="NA"))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_p0_mx), colour='red')+geom_line(aes(x=DateTime_AEDT, y=alt_p0_mx), colour='red')+
   geom_point(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+geom_line(aes(x=DateTime_AEDT, y=alt_gps), colour='green')+  
   facet_wrap(~burstID, scales="free")
 
 # FYI Significant wave height = the average wave height of the top one-third highest waves
 
-wave_temp<-dat%>%filter(class=="S")%>%group_by(burstID)%>%summarise(w_height=mean(wave_height),
+wave_temp<-dat_floating%>%group_by(burstID)%>%summarise(w_height=mean(wave_height),
                                                         w_period=mean(wave_period)) 
 
-wave_sum<-left_join(zc_summary%>%filter(class=="S"), wave_temp, by="burstID")
+wave_sum<-left_join(zc_summary, wave_temp, by="burstID")
 
 # lms tell us which outliers to remove b4 pearsons corr
 w1<-lm(w_height~ds_hsig, data=wave_sum)
@@ -632,77 +620,6 @@ p7<-ggplot()+geom_point(data=wave_sum[wave_sum$gps_hsig<6,], aes(y=w_period, x=g
 
 #### ^^ ####
 
-#### Summarise altitude from the three methods and compare  ####
-
-#remove first GPS fix of each burst as higher error
-dat<-dat %>% group_by(burstID) %>%
-  filter(row_number()!=1)%>%ungroup()%>%as.data.frame()
-
-# compare differences between three methods
-
-# format dataset for comparison # not added 1000 to all alts to make positive for Gamma
-
-dat_flying<-dat%>%filter(class %in% c('T', 'L') & sit_fly=='fly')
-
-# compare p0 values between dynamic soaring and sitting method
-dat_fly_first<-dat_flying%>%group_by(burstID)%>%summarise_all(first)
-boxplot(dat_fly_first$p0,dat_fly_first$p0_SO)
-summary(dat_fly_first$p0);summary(dat_fly_first$p0_SO)
-t.test(dat_fly_first$p0_SO,dat_fly_first$p0, paired=T)
-mean(dat_fly_first$p0_SO); sd(dat_fly_first$p0_SO)
-mean(dat_fly_first$p0); sd(dat_fly_first$p0)
-# end of p0 comparison
-
-# do Levene Test to test for homogeneity of variance (precision between GPS and DS altitudes)
-test_dat<-rbind(data.frame(val=dat_flying$alt_DS, grp="ds"), data.frame(val=dat_flying$alt_gps, grp="gps"))
-leveneTest(val ~ grp, data = test_dat)
-
-cor.test(dat_flying$alt_DS, dat_flying$alt_gps)
-ggplot(data=dat_flying)+geom_point(aes(x=alt_gps, y=alt_DS))
-
-
-dat_comp<-rbind(data.frame(method='Dynamic soaring', Altitude=dat_flying$alt_DS, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Satellite ocean', Altitude=dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS', Altitude=dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
-
-#summarise
-dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitude), median=median(Altitude),
-                                    min=min(Altitude), max=max(Altitude),
-                                    q25=quantile(Altitude, 0.25), q75=quantile(Altitude, 0.75), skew=skewness(Altitude))
-# make plot
-cols <- c("#000000",'#00A9FF','#E68613')
-
-cols.alpha<-c(grDevices::adjustcolor(cols[1], alpha.f = 0.75),
-        grDevices::adjustcolor(cols[2], alpha.f = 0.75),
-        grDevices::adjustcolor(cols[3], alpha.f = 0.75))
-
-ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size=2)+
-  theme_bw()+geom_vline(xintercept = 0, linetype='dotted')+scale_x_continuous(breaks=seq(-60,60,2))+
-  scale_colour_manual(values = cols.alpha)+coord_cartesian(xlim=c(-20, 40))+
-  theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
-        legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
-  scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters zeroed with\ndynamic soaring", 
-  "GPS Altitude", "Altimeters zeroed from\nsitting at sea or satellite"))+labs(x="Flight height (m)", y="Density")
-
-# Now run stats on difference data to keep things normal
-
-dat_diff<-rbind(data.frame(method='Dynamic soaring - GPS', Altitude=dat_flying$alt_DS-dat_flying$alt_gps, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID) ,
-                data.frame(method='Dynamic soaring - Satellite ocean', Altitude=dat_flying$alt_DS-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID),
-                data.frame(method='GPS - Satellite ocean', Altitude=dat_flying$alt_gps-dat_flying$alt_SO, Logger=as.character(dat_flying$ID), burstID=dat_flying$burstID))
-
-
-m1<-lme(Altitude~method, random=~1|burstID, weights=varIdent(form=~1|method), data=dat_diff)
-boxplot(residuals(m1, type='pearson')~dat_diff$method)
-m2<-lme(Altitude~method, random=~1|Logger, weights=varIdent(form=~1|method), data=dat_diff)
-
-AIC(m1, m2) # logger ID as RE not as good
-resid_panel(m1)
-summary(m1)
-
-anova(m1)
-em1<-emmeans(m1, specs='method')
-em1
-test(em1, adjust="bonferroni")
 
 #### Make prop time in 1m band fig and table ####
 
