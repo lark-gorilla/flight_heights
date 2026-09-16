@@ -33,6 +33,24 @@ dat<-dat%>%filter(deployed_ID!="predeployment")
 
 table(dat$burstID, dat$class)
 
+##  Speed  ##
+#average FLYING speed - NOW USING GPS SPEED (knots conversion)
+tripdat%>%filter(tripID!="-1"& ColDist>1 & (speed/1.94384)>4)%>%
+  summarise(mean_s=mean(speed/1.94384), sd_s=sd(speed/1.94384))
+#mean_s     sd_s
+#1 13.37805 3.980755
+
+#plot non-island points for supplementary 
+ggplot()+
+  geom_histogram(data=tripdat%>%filter(tripID!="-1" & ColDist>1),
+                 aes(x=speed/1.94384, fill=ifelse((speed/1.94384)<4, "blue", "red")), colour=1, binwidth=1, boundary=0)+
+  geom_label(aes(x=13, y=15000, label="Mean flying speed = 13.38±3.98 m/s"), size=5)+
+  scale_x_continuous(breaks=0:32)+theme_bw()+ylab("Count of GPS datapoints")+xlab("speed m/s")+theme(legend.position="none")
+
+##
+
+# Remove bad IDs - bursts that have pressure errors
+
 bad_ids<-c(
   "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
   "08611854_01_35",  "08611854_01_41", "08611854_01_42", "08611854_01_46",  "08611854_01_47",
@@ -93,6 +111,18 @@ dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(b_w_class)%>%summarise(n())
 
 dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
 # all flights in day!
+
+#data export for Monash Bridges
+d1<-dat%>%dplyr::select(birdID=ID, burstID, datetime_UTC=DateTime_UTC, latitude=Latitude, longitude=Longitude,
+                        speed_ms=speed, hdop, vdop, nSats, fixTime,vBatt, GPSaltitude=alt, temp_degC=temp, pres_pa, burst_class=class)
+d1$speed_ms<-d1$speed_ms/1.94384 # convert from knots to ms-1
+d1[d1$burst_class=='A',]$burst_class<-'takeoff_landing'
+d1[d1$burst_class=='C',]$burst_class<-'at_colony'
+d1[d1$burst_class=='L',]$burst_class<-'flying'
+d1[d1$burst_class=='S',]$burst_class<-'floating'
+d1[d1$burst_class=='T',]$burst_class<-'flying'
+
+write.csv(d1, "C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/data/Miller_BCI_albatross.csv",row.names=F, quote=F)
 
 ###~ GPS correction and tweak ~###
 
@@ -187,6 +217,9 @@ dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_gam=
 #make sure no predictions higher than p0_max
 dat_flying$p0_gam<-ifelse(dat_flying$p0_gam>dat_flying$p0_mx, dat_flying$p0_mx, dat_flying$p0_gam)
 
+#make sure no predictions lower than than p0_ds_seg - removes negative values from gam prediction
+dat_flying$p0_gam<-ifelse(dat_flying$p0_gam<dat_flying$p0_ds_seg, dat_flying$p0_ds_seg, dat_flying$p0_gam)
+
 # sanity check
 for(i in unique(dat_flying$burstID))
 {
@@ -219,12 +252,12 @@ dat_flying$alt_p0_error<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying
 
 ggplot(data=dat_flying)+geom_histogram(aes(x=alt_p0_error), binwidth=0.5)+
   geom_vline(data=dat_flying%>%summarise(med_er=median(alt_p0_error)),aes(xintercept=med_er), col=3)+
-  scale_x_continuous(breaks=0:11)+theme_bw()+xlab("Error in altimeter flight height estimates (m)")+ylab("Count of datapoints")
+  scale_x_continuous(breaks=0:11)+theme_bw()+xlab("Plausible range of altimeter flight height estimates (m)")+ylab("Count of datapoints")
 
 ggplot(data=dat_flying)+geom_histogram(aes(x=alt_p0_error), binwidth=0.5)+
   geom_vline(data=dat_flying%>%group_by(ID)%>%summarise(med_er=median(alt_p0_error)),aes(xintercept=med_er), col=3)+
   scale_x_continuous(breaks=0:11)+ theme_bw()+
-  facet_wrap(~ID, scales='free_y')+xlab("Error in altimeter flight height estimates (m)")+ylab("Count of datapoints")
+  facet_wrap(~ID, scales='free_y')+xlab("Plausible range of altimeter flight height estimates (m)")+ylab("Count of datapoints")
 
 summary(dat_flying$alt_p0_error)
 #   Min. 1st Qu.  Median    Mean 3rd Qu.    Max. 
@@ -252,6 +285,13 @@ dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitud
 #3 Dynamic soaring - upr bound   5.61   3.24   4.97   0     26.1  3.28  7.32 1.09  
 #4 GPS                           5.10   9.72   4    -63     89    0     9    0.0607
 
+#method                        mn_alt sd_alt median   min   max   q25   q75   skew
+#<fct>                          <dbl>  <dbl>  <dbl> <dbl> <dbl> <dbl> <dbl>  <dbl>
+#  1 Altimeters (lower scenario)     3.23   2.70   2.67     0  26.1  1.26  4.55 1.46  
+#2 Altimeters (central scenario)   4.48   2.89   3.91     0  26.1  2.41  5.97 1.23  
+#3 Altimeters (upper scenario)     5.61   3.24   4.97     0  26.1  3.28  7.32 1.09  
+#4 GPS                             5.10   9.72   4      -63  89    0     9    0.0607
+
 # skewness stats
 test.skew(dat_comp%>%filter(method=='GPS')%>%pull(Altitude))
 
@@ -271,9 +311,26 @@ ggplot(data=dat_comp)+geom_density(aes(x=Altitude, colour=method), fill=NA, size
   theme(legend.position= c(0.8,0.8), axis.text=element_text(size=10),axis.title=element_text(size=12),
         legend.background = element_blank(),legend.box.background = element_rect(colour = "black"))+
   scale_colour_manual("Flight height estimation method", values=cols.alpha, labels=c("Altimeters (lower scenario)",
-                                                                                     "Altimeters (most likely scenario)",
-                                                                                     "Altimeters (upper scenario)",
-                                                                                     "GPS Altitude"))+labs(x="Flight height (m)", y="Density")
+                                                                                     "Altimeters (central scenario)",
+                                                                                     "Altimeters (upper scenario)"))
+
+  
+dat_comp[dat_comp$method=="Dynamic soaring - lwr bound",]$method<-"Altimeters (lower scenario)"
+  dat_comp[dat_comp$method=="Dynamic soaring - upr bound",]$method<-"Altimeters (upper scenario)"
+  dat_comp[dat_comp$method=="Dynamic soaring - mean",]$method<-"Altimeters (central scenario)"
+  
+  dat_comp$method<-factor(dat_comp$method, levels=c("Altimeters (lower scenario)",
+                                                    "Altimeters (central scenario)",
+                                                    "Altimeters (upper scenario)", "GPS"))
+                                                                                     
+ ggplot(data=dat_comp)+geom_histogram(aes(x=Altitude, fill=method),col=1, binwidth=1)+
+   geom_vline(xintercept = 0, linetype='dotted')+
+  scale_x_continuous(breaks=seq(-60,60,2))+
+  coord_cartesian(xlim=c(-20, 40))+
+  scale_fill_manual(values=cols.alpha)+labs(x="Flight height (m)", y="Count")+
+   facet_wrap(~method, nrow=4, scales='free_y')+theme_bw()+ theme(legend.position = "none",
+                                                                  strip.text = element_text(size = 10, face='bold'),
+                                                                  axis.title = element_text(size = 12))   
 
 
 wilcox.test(x= dat_flying$alt_gps,
@@ -542,24 +599,24 @@ check_model(w4)
 check_model(w5)
 
 wp1<-ggplot(data=wave_sum[-c(13, 17,18,32),])+geom_point(aes(y=w_height, x=ds_hsig))+theme_bw()+
-  labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite (m)', size=5)+
+  labs(x='Wave height from albatross altimeters (m)',y='Wave height from satellite ERA5 (m)', size=5)+
   geom_text(aes(x=7, y=1.4), label=expression(italic(r)*" = "*"0.58, "* italic(p) < 0.001), size=4)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=12))
 
 wp2<-ggplot(data=wave_sum[wave_sum$gps_hsig<6,])+geom_point(aes(y=w_height, x=gps_hsig))+theme_bw()+
-  labs(x='Wave height from albatross GPS (m)',y='Wave height from satellite (m)', size=5)+
+  labs(x='Wave height from albatross GPS (m)',y='Wave height from satellite ERA5 (m)', size=5)+
   geom_text(aes(x=4, y=1.4), label=expression(italic(r)*" = "*"0.37, "* italic(p)*" = "*0.03), size=4)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=12))
 
 wp3<-ggplot(data=wave_sum[-c(13, 17,18,32),])+geom_point(aes(y=w_period, x=ds_tmean))+theme_bw()+
-  labs(x='Wave period from albatross altimeters (s)',y='Wave period from satellite (s)', size=5)+
+  labs(x='Wave period from albatross altimeters (s)',y='Wave period from satellite ERA5 (s)', size=5)+
   geom_text(aes(x=9, y=7), label=expression(italic(r)*" = "*"0.86, "* italic(p) < 0.001), size=4)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=12))
 
 wp4<-ggplot(data=wave_sum[wave_sum$gps_hsig<6,])+geom_point(aes(y=w_period, x=gps_tmean))+theme_bw()+
-  labs(x='Wave period from albatross GPS (s)',y='Wave period from satellite (s)', size=5)+
+  labs(x='Wave period from albatross GPS (s)',y='Wave period from satellite ERA5 (s)', size=5)+
   geom_text(aes(x=30, y=7), label=expression(italic(p)*" = NS"), size=4)+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))
+  theme(axis.text=element_text(size=12))
 
 cor.test(x=wave_sum[-c(13, 17,18,32),]$w_height, y=wave_sum[-c(13, 17,18,32),]$ds_hsig, method='pearson', na.action=na.omit) 
 cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_height, y=wave_sum[wave_sum$gps_hsig<6,]$gps_hsig, method='pearson', na.acmtion=na.omit)
@@ -567,7 +624,41 @@ cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_height, y=wave_sum[wave_sum$gps_hsig
 cor.test(x=wave_sum[-c(13, 17,18,32),]$w_period, y=wave_sum[-c(13, 17,18,32),]$ds_tmean, method='pearson', na.action=na.omit)
 cor.test(x=wave_sum[wave_sum$gps_hsig<6,]$w_period, y=wave_sum[wave_sum$gps_hsig<6,]$gps_tmean, method='pearson', na.acmtion=na.omit)
 
-(wp1+wp2)/(wp3+wp4)
+# additional request for sitting plot from reviewer
+
+sit_expl<-dat[dat$burstID=='41490936_01_10',]
+rescale <- function(x_i){max(sit_expl$pres_pa)-x_i}
+sit_expl$pres_pa_rev<-rescale(sit_expl$pres_pa)+max(sit_expl$pres_pa)
+
+p1<-ggplot(sit_expl, aes(x=DateTime_AEDT)) +
+  
+  geom_line(aes(y=pres_pa_rev), color=1) + 
+  geom_line(aes(y=(alt_gps*13.3)+102290), color='#ffb000') +
+  
+  scale_y_continuous(
+    name = "Pressure (Pa) - reversed",
+    sec.axis = sec_axis(~(.-102290)/13.3, name="GPS altitude (m)")) +
+  theme_bw()+scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)') 
+
+
+p_out<-p1/(wp1+wp2)/(wp3+wp4)
+
+library(rvg)
+library(officer)
+
+# Convert to editable format
+p_dml <- dml(ggobj = p_out)
+
+# Export to PowerPoint
+read_pptx() %>%
+  add_slide() %>%
+  ph_with(p_dml, location = ph_location_fullsize()) %>%
+  print(target = "C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/p_extra.pptx")
+
+read_pptx('C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/pres_templ.pptx') %>%
+  add_slide(layout = "Title and Content", master = "Office Theme") %>%
+  ph_with(dml(ggobj=p_out), location = ph_location_fullsize()) %>% 
+  print(target = "C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights/writeup/p_extra1.pptx")
 
 
 # for main fig - not used anymore. Looks better without pred line

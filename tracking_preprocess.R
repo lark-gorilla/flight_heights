@@ -451,6 +451,8 @@ d1<-rbind(pd_dat%>%filter(!is.na(island_dem))%>%dplyr::select(ID, alt, island_de
 
 ggplot(data=d1)+geom_point(aes(x=island_dem, y=alt, colour=ID))
 
+ggplot(data=d1)+geom_point(aes(x=island_dem, y=alt, colour=hdop))+facet_wrap(~ID)
+
 d1$alt_diff=d1$alt-d1$island_dem
 
 # difference on colony per device

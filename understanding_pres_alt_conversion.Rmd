@@ -10,6 +10,7 @@ date: "2023-11-22"
 
 library(ggplot2)
 library(dplyr)
+library(tidyr)
 library(rayshader)
 library(patchwork)
 library(lubridate)
@@ -18,6 +19,15 @@ library(sf)
 library(nlme)
 library(emmeans)
 library(performance)
+library(oceanwaves)
+library(gridExtra)
+library(figpatch)
+library(e1071)
+library(fitdistrplus)
+library(car)
+library(zoo)
+library(pracma)
+library(mgcv)
 
 setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/02 flight heights")
 
@@ -29,6 +39,7 @@ burst_summary<-read.csv("analyses/burst_summary_dat_all.csv", h=T)
 dat$DateTime_AEDT<-ymd_hms(dat$DateTime_AEDT, tz="Australia/Sydney")
 dat<-dat%>%filter(deployed_ID!="predeployment")     
 
+#table(dat$burstID, dat$class)
 
 bad_ids<-c(
   "-1_1",  "08611854_01_30","08611854_01_31", "08611854_01_33", "08611854_01_34",
@@ -53,6 +64,8 @@ bad_ids<-c(
   "08611649_01_26",  "08611649_01_27",  "08611649_01_28",  "08611649_01_29",
   "08611649_01_37", # "08611649_01_39" allowed thru but includes a bit
   "08611649_01_40",  "08611649_01_41", "08611649_01_17")
+
+length(unique(dat$burstID));length(bad_ids)
   
 dat<-dat%>%filter(!burstID %in% bad_ids) # could do extra check based on min/max burst pressure difference  to see if any missed
 
@@ -72,75 +85,126 @@ dat<-dat%>%filter(!(burstID=="08611854_06_160" & DateTime_AEDT>ymd_hms("2023-04-
 dat<-dat%>%filter(!(burstID=="08611649_01_39" & DateTime_AEDT>ymd_hms("2023-10-02 07:12:25", tz="Australia/Sydney")))
 #
 
-# finally set all sitting points that might be looped over as not in the loop
 
-#ggplot()+geom_sf(data=track_polys, fill='red')+geom_sf(data=track_ls)+geom_sf(data=track_dat[unlist(int1),], col='green', aes(shape=sit_fly))
-
-#### ^^ ####
-
-#### Calculation of flight height using dynamic soaring method and correction to GPS ####
-
-# barometric formula (Berberan Santos et al. 1997)
-#h=((k*T)/(m*g))*ln(p/p0)
-k=8.31432
-m=0.0289644
-g=9.80665
+###~ GPS correction and tweak ~###
 
 #Add -9m correction to GPS elevation 
 dat$alt_gps<-dat$alt-9
 
-dat$index<-1:nrow(dat)
-dat$p0<-0
+#remove first GPS fix of each burst as higher error
+dat<-dat %>% group_by(burstID) %>%
+  filter(row_number()!=1)%>%ungroup()%>%as.data.frame()
+### ~~~~~~~~~~~~~~~~~~~~~~~~~~ ###
 
+#make flying subset for flight height analyses
+dat_flying<-dat%>%filter(class %in% c("T", "L"))%>%ungroup()
 
-dat$alt_DS<-NA
-for (i in unique(dat$burstID))
+#### ^^ ####
+
+#### dynamic soaring cycle segmentation ####
+dat_flying$ds_seg_pressure<-NA
+dat_flying$ds_seg_gps<-NA
+for(i in unique(dat_flying$burstID))
 {
-  # original method - 95% upper quantile of pressure to set p0 for entire burst
-  dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.95)
-  
-  if(unique(dat[dat$burstID==i,]$class)=="A") #separate p0 values for sitting vs flying in takeoff/landing bursts
-        {
-        dat[dat$burstID==i &dat$sit_fly=="sit",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="sit",]$pres_pa, probs=0.50)
-        dat[dat$burstID==i &dat$sit_fly=="fly",]$p0<-quantile(dat[dat$burstID==i &dat$sit_fly=="fly",]$pres_pa, probs=0.95)
-        }
-  if(unique(dat[dat$burstID==i,]$class)=="S") #Use 0.5 for wave height to assume mean sea level
-  {
-    dat[dat$burstID==i,]$p0<-quantile(dat[dat$burstID==i,]$pres_pa, probs=0.50)
-  }
-}
-  
-dat$alt_DS<-(-1*  # *-1 flips negative/positive values
-                                    ((k*(dat$temp+273.15))/(m*g))*log(dat$pres_pa/dat$p0))
+i_burst<-dat_flying[dat_flying$burstID==i,]
 
-#### ^^^ ####
+
+pres_smth <- rollmean(i_burst$pres_pa, k = 3, fill = NA) # apply moving window 3-pt
+gps_smth <- rollmean(i_burst$alt_gps, k = 3, fill = NA)
+
+# find valleys - could possibly be optimised including zero-crossing too
+# negative sign finds valleys (for pressure only)
+pres_valz<-findpeaks(-pres_smth, minpeakdistance = 5, nups=2, ndowns=2, zero='+') 
+# 5 sec = min peak-peak distance min DS duration from Schoombie et al 2023.
+gps_valz<-findpeaks(gps_smth, minpeakdistance = 5, nups=2, ndowns=2, zero='+')
+
+i_burst[pres_valz[,4]%>%sort(),]$ds_seg_pressure<-seq(1:length(pres_valz[,4]))
+i_burst[gps_valz[,4]%>%sort(),]$ds_seg_gps<-seq(1:length(gps_valz[,4]))
+
+i_burst$ds_seg_pressure[1]<-0
+i_burst<-i_burst%>%fill(ds_seg_pressure, .direction='down')
+i_burst$ds_seg_gps[1]<-0
+i_burst<-i_burst%>%fill(ds_seg_gps, .direction='down')
+
+dat_flying[dat_flying$burstID==i,]$ds_seg_pressure<-i_burst$ds_seg_pressure
+dat_flying[dat_flying$burstID==i,]$ds_seg_gps<-i_burst$ds_seg_gps
+
+}
+
+
+#### ^^ ####
+
+#### Sensitivity tests for p0 method ####
+
+# use absolute maximum
+dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) 
+
+# per dynamic soaring segment (above loop)
+temp_d<-dat_flying %>% group_by(burstID) %>% slice(c(1,1:(n()-1)))%>%ungroup()%>%arrange(ID, burstID,ds_seg_pressure)
+dat_flying<-dat_flying%>%ungroup()%>%arrange(ID, burstID,ds_seg_pressure) %>%mutate(pres_pa_1=temp_d$pres_pa)
+dat_flying<-dat_flying%>%group_by(burstID, ds_seg_pressure)%>%mutate(p0_ds_segSRT=max(pres_pa_1), p0_ds_segEND=max(pres_pa),
+                                                                     p0_ds_seg=max(p0_ds_segSRT, p0_ds_segEND) ) 
+#calculate most likely p0
+dat_flying$p0_diff<-dat_flying$p0_mx-dat_flying$p0_ds_seg
+dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_gam=
+                               fitted(gam((p0_mx-(p0_diff/2))~s(DateTime_AEDT%>%as.numeric(), k=7))))%>%ungroup
+#make sure no predictions higher than p0_max
+dat_flying$p0_gam<-ifelse(dat_flying$p0_gam>dat_flying$p0_mx, dat_flying$p0_mx, dat_flying$p0_gam)
+
+
+## Now calculate flight heights using barometric formula (Berberan Santos et al. 1997)
+#h=((k*T)/(m*g))*ln(p/p0)
+k=8.31432
+m=0.0289644
+g=9.80665
+# *-1 flips negative/positive values
+# calc altitudes from different p0s: max, min, most likely and also p0 error
+dat_flying$alt_p0_mx<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying$pres_pa/dat_flying$p0_mx))
+dat_flying$alt_p0_ds_seg<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying$pres_pa/dat_flying$p0_ds_seg))
+dat_flying$alt_p0_gam<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying$pres_pa/dat_flying$p0_gam))
+dat_flying$alt_p0_error<-(-1*((k*(dat_flying$temp+273.15))/(m*g))*log(dat_flying$p0_ds_seg/dat_flying$p0_mx))
+
+
+#### ^^ ####
+
 for(j in c("T", "L", "S", "A"))
 {
+
 for (i in unique(dat[dat$class==j,]$burstID))
 {
+if(j%in%c("T", "L")){
+      
   cat("\n\n## ", i, "\n")
+  
+  i_burst<-dat_flying[dat_flying$burstID==i,]
 
-  p2<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
-  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly), size=1)+scale_y_reverse()+
-  labs(y="Pressure (Pa) - reversed", x="Time", color="Behaviour")+
-  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
-    scale_colour_manual("Behaviour", values=c("fly"="red","sit"="blue"),labels=c("fly"="flying", "sit"="sitting"))+
-  geom_hline(yintercept=unique(dat[dat$burstID==i,]$p0), linetype='dotted')+theme_bw()+
-  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
+cols=c(rep(c('black', "darkgray"), length(unique(i_burst$ds_seg_pressure))-1), 'black')
+p2<-ggplot(data=i_burst)+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1,colour=factor(ds_seg_pressure)), size=1)+
+  scale_y_reverse()+
+  labs(y="Pressure (Pa) - reversed", x="Time")+
+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col='#fe6100', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_ds_seg), col='#dc267f', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_gam), col='#648fff', size=1)+
+  geom_line(aes(x=DateTime_AEDT, y=p0_mx), col='#fe6100', linetype='dashed', size=1)+
+  scale_colour_manual(values=cols)+
+  theme_bw()+ guides(colour="none")+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')+
+  theme(panel.grid.minor=element_blank(),axis.text=element_text(size=15),axis.title=element_text(size=17))
 
-dt1<-rbind(data.frame(DateTime_AEDT=dat[dat$burstID==i,]$DateTime_AEDT, alt=dat[dat$burstID==i,]$alt_DS, sensor="DS"),
-           data.frame(DateTime_AEDT=dat[dat$burstID==i,]$DateTime_AEDT, alt=dat[dat$burstID==i,]$alt_gps, sensor="GPS"))
+
+dt1<-rbind(data.frame(DateTime_AEDT=i_burst$DateTime_AEDT, alt=i_burst$alt_p0_gam, sensor="DS"),
+           data.frame(DateTime_AEDT=i_burst$DateTime_AEDT, alt=i_burst$alt_gps, sensor="GPS"))
   
   p2.5<-ggplot(data=dt1)+
   geom_line(aes(x=DateTime_AEDT, y=alt, group=sensor, colour=sensor))+
   geom_point(aes(x=DateTime_AEDT, y=alt, colour=sensor), size=1)+
   labs(y="Altitude (m)", x="Time", shape="Behaviour")+theme_bw()+
-  scale_colour_manual("Sensor", values=c("black", "#00A9FF"),labels=c("Altimeter zeroed\nwith dynamic soaring", "GPS altitude"))+
+  scale_colour_manual("Sensor", values=c('#648fff', '#ffb000'),labels=c("Altimeter zeroed\nwith dynamic soaring\n-most likely scenario", "GPS altitude"))+
   theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
   scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')
   
-  p3<-ggplot(data=dat[dat$burstID==i,])+geom_path(aes(x=Longitude, y=Latitude, group=1))+theme_bw()+
-    geom_point(aes(x=Longitude, y=Latitude, colour=alt_DS, shape=sit_fly))+scale_color_viridis("Altitude (m) from\nAltimeter zeroed \nwith dynamic soaring")
+  p3<-ggplot(data=i_burst)+geom_path(aes(x=Longitude, y=Latitude, group=1))+theme_bw()+
+    geom_point(aes(x=Longitude, y=Latitude, colour=alt_p0_gam, shape=sit_fly))+scale_color_viridis("Altitude (m) from\nAltimeter zeroed \nwith dynamic soaring\n-most likely scenario")
   
    print(p2/p2.5/p3)
    
@@ -149,6 +213,34 @@ dt1<-rbind(data.frame(DateTime_AEDT=dat[dat$burstID==i,]$DateTime_AEDT, alt=dat[
   #print(p2)
   #print(p2.5)
   #print(p3)
+   
+}else{
+   cat("\n\n## ", i, "\n")
+  p2<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT, y=pres_pa, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=pres_pa, colour=sit_fly))+scale_y_reverse()+
+  labs(y="Pressure (Pa) - reversed", x="Time", color="Behaviour")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+    scale_colour_manual("Behaviour", values=c("fly"="red","sit"="blue"),labels=c("fly"="flying", "sit"="sitting"))+
+  theme_bw()+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)')  
+  
+    p2.5<-ggplot(data=dat[dat$burstID==i,])+geom_line(aes(x=DateTime_AEDT, y=alt_gps, group=1))+
+  geom_point(aes(x=DateTime_AEDT, y=alt_gps, colour=sit_fly))+
+  labs(y="GPS altitude (m)", x="Time", color="Behaviour")+
+  theme(axis.text=element_text(size=12),axis.title=element_text(size=14))+
+    scale_colour_manual("Behaviour", values=c("fly"="red","sit"="blue"),labels=c("fly"="flying", "sit"="sitting"))+
+  theme_bw()+
+  scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)') 
+  
+    p3<-ggplot(data=dat[dat$burstID==i,])+geom_path(aes(x=Longitude, y=Latitude, group=1))+theme_bw()+
+    geom_point(aes(x=Longitude, y=Latitude, colour=sit_fly))+
+      scale_colour_manual("Behaviour", values=c("fly"="red","sit"="blue"),labels=c("fly"="flying", "sit"="sitting"))
+    
+    print(p2/p2.5/p3+ plot_layout(guides = "collect"))
+   
+   cat("\n\n\\pagebreak\n") 
+  
+}#close else loop
    
 }
 } #close j loop

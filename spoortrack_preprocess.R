@@ -9,14 +9,14 @@ library(suncalc)
 library(lutz)
 library(geosphere)
 
-setwd("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment")
+setwd("C:/Users/mmil0049/OneDrive - Monash University/projects/11 DCCEEW albatrosses/data/boat-based deployments")
 
 # read data
 
 dat<-NULL
-for(i in list.files("04mar2025_datapull"))
+for(i in list.files("datapull_141025"))
 {
-d1<-read.csv(paste0("04mar2025_datapull/", i), skip=1)
+d1<-read.csv(paste0("datapull_141025/", i), skip=1)
 dat<-rbind(dat, data.frame(d1, ID=substr(i, 3, 6)))
 }
 
@@ -24,55 +24,44 @@ dat<-dat%>%dplyr::select(-c('Number.of.SVs', 'Altitude..metres.',
                             'Sensor.Temperature', 'Time.Underwater', 'Activity.Count'))
 
 # remove loggers that failed to turn on
-dat<-dplyr::filter(dat, !ID%in%c(1202, 1319, 1666))
+#dat<-dplyr::filter(dat, !ID%in%c(1202, 1319, 1666))
 
 #assign species
 dat$sp<-"NA"
-dat[dat$ID %in%c(1313,1314,1315,1321,1322,1323),]$sp<-"BUAL"
-dat[dat$ID %in%c(1183,1200, 1196, 1316, 1318),]$sp<-"WCAL"
-dat[dat$ID %in%c(1428),]$sp<-"SHAL"
-dat[dat$ID %in%c(1427, 1433),]$sp<-"WAAL"
-dat[dat$ID %in%c(1437, 1660, 1443),]$sp<-"NZAL"
-dat[dat$ID %in%c(1324,1424,1425,1430,1431,1432),]$sp<-"NGPE"
-dat[dat$ID %in%c(1426),]$sp<-"SGPE"
-dat[dat$ID %in%c(1320),]$sp<-"IYNA"
-dat[dat$ID %in%c(1326, 1327),]$sp<-"BBAL"
+#dat[dat$ID %in%c(1313,1314,1315,1321,1322,1323),]$sp<-"BUAL"
+#dat[dat$ID %in%c(1183,1200, 1196, 1316, 1318),]$sp<-"WCAL"
+#dat[dat$ID %in%c(1428),]$sp<-"SHAL"
+#dat[dat$ID %in%c(1427, 1433),]$sp<-"WAAL"
+#dat[dat$ID %in%c(1437, 1660, 1443),]$sp<-"NZAL"
+dat[dat$ID %in%c(1917,1907,1950,1924,1664,1667),]$sp<-"NGPE"
+dat[dat$ID %in%c(1918,1935,1661,2043),]$sp<-"SGPE"
+#dat[dat$ID %in%c(1320),]$sp<-"IYNA"
+dat[dat$ID %in%c(1906,1947,1941,1915,1909,1933),]$sp<-"BBAL"
 
 #convert datetime to local
 dat$UTC.Timestamp<-ymd_hms(dat$UTC.Timestamp, tz="UTC")
 dat$DateTime_AEDT<-with_tz(dat$UTC.Timestamp, tz="Australia/Sydney")
 #remove some duplicates
+table(dat[which(duplicated(paste(dat$ID, dat$DateTime_AEDT))),]$ID)# one or two bursts per logger. Not an issue
 dat<-dat[-which(duplicated(paste(dat$ID, dat$DateTime_AEDT))),]
 
-
-# remove pre-deployment data - manually specify for each device
-dat<-dat%>%filter(!(ID=="1183" & DateTime_AEDT<ymd_hms("2023-12-20 13:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1200" & DateTime_AEDT<ymd_hms("2023-12-20 14:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1196" & DateTime_AEDT<ymd_hms("2023-12-20 15:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1313" & DateTime_AEDT<ymd_hms("2024-02-21 11:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1321" & DateTime_AEDT<ymd_hms("2024-02-21 12:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1314" & DateTime_AEDT<ymd_hms("2024-02-21 14:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1315" & DateTime_AEDT<ymd_hms("2024-02-21 14:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1316" & DateTime_AEDT<ymd_hms("2024-02-22 10:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1318" & DateTime_AEDT<ymd_hms("2024-02-22 11:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1322" & DateTime_AEDT<ymd_hms("2024-02-22 11:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1323" & DateTime_AEDT<ymd_hms("2024-02-22 14:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1327" & DateTime_AEDT<ymd_hms("2024-03-12 09:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1326" & DateTime_AEDT<ymd_hms("2024-03-12 15:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1320" & DateTime_AEDT<ymd_hms("2024-04-17 13:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1430" & DateTime_AEDT<ymd_hms("2024-06-20 13:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1324" & DateTime_AEDT<ymd_hms("2024-06-28 11:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1426" & DateTime_AEDT<ymd_hms("2024-09-11 10:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1443" & DateTime_AEDT<ymd_hms("2024-09-11 11:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1431" & DateTime_AEDT<ymd_hms("2024-09-11 13:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1432" & DateTime_AEDT<ymd_hms("2024-09-11 13:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1424" & DateTime_AEDT<ymd_hms("2024-09-11 16:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1428" & DateTime_AEDT<ymd_hms("2024-10-21 14:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1425" & DateTime_AEDT<ymd_hms("2024-10-22 10:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1433" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1437" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1427" & DateTime_AEDT<ymd_hms("2024-10-22 12:00:00", tz="Australia/Sydney")))
-dat<-dat%>%filter(!(ID=="1660" & DateTime_AEDT<ymd_hms("2024-11-28 12:00:00", tz="Australia/Sydney")))
+# remove pre-deployment data - manually specify for each device (= the hour following Release Time)
+dat<-dat%>%filter(!(ID=="1918" & DateTime_AEDT<ymd_hms("2025-09-05 10:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1906" & DateTime_AEDT<ymd_hms("2025-09-05 10:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1917" & DateTime_AEDT<ymd_hms("2025-09-05 12:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1907" & DateTime_AEDT<ymd_hms("2025-09-05 12:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1947" & DateTime_AEDT<ymd_hms("2025-09-05 13:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1941" & DateTime_AEDT<ymd_hms("2025-09-05 13:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1915" & DateTime_AEDT<ymd_hms("2025-09-05 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1950" & DateTime_AEDT<ymd_hms("2025-09-05 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1909" & DateTime_AEDT<ymd_hms("2025-09-05 14:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1924" & DateTime_AEDT<ymd_hms("2025-09-05 15:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1935" & DateTime_AEDT<ymd_hms("2025-09-05 15:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1933" & DateTime_AEDT<ymd_hms("2025-09-05 15:00:00", tz="Australia/Sydney")))
+dat<-dat%>%filter(!(ID=="1664" & DateTime_AEDT<ymd_hms("2025-09-10 16:00:00", tz="Australia/Sydney")))# release time guessed!
+dat<-dat%>%filter(!(ID=="1661" & DateTime_AEDT<ymd_hms("2025-09-10 16:00:00", tz="Australia/Sydney")))# release time guessed!
+dat<-dat%>%filter(!(ID=="1667" & DateTime_AEDT<ymd_hms("2025-09-18 16:00:00", tz="Australia/Sydney")))# release time guessed!
+dat<-dat%>%filter(!(ID=="2043" & DateTime_AEDT<ymd_hms("2025-09-18 16:00:00", tz="Australia/Sydney")))# release time guessed!
 
 # for some reason some data not correctly ordered 
 dat<-dat%>%group_by(ID)%>%arrange(UTC.Timestamp)%>%ungroup()
@@ -81,6 +70,8 @@ dat<-dat%>%group_by(ID)%>%arrange(UTC.Timestamp)%>%ungroup()
 dat$burstID<-as.numeric(paste0(dat$ID, as.double(ymd_h((format(as.POSIXct(dat$UTC.Timestamp), format = '%Y-%m-%d %H'))))))
 
 table(table(dat$burstID))
+
+
 
 # make Deployment duration fig
 d1<-dat%>%group_by(sp, ID)%>%summarise(st_dep=first(DateTime_AEDT),
@@ -121,7 +112,7 @@ dat<-dat[dat$burstID%in% id_l[id_l$Freq>299,]$Var1,] # remove bursts less than 2
 #remove first row of each burst as first pressure reading sometimes iffy
 dat<-dat%>%group_by(burstID)%>%slice(-1)%>%as.data.frame()
 
-# Run to here, for furst data prep!
+# Run to here, for first data prep!
 
 dat_sf<-st_as_sf(dat%>%group_by(ID, burstID)%>%summarise_all(first), coords=c("Longitude", "Latitude"), crs=4326)
 dat_sf<-dat_sf%>%arrange(ID, DateTime_AEDT)
@@ -401,7 +392,7 @@ dat$alt_DS<-(-1*  # *-1 flips negative/positive values
 #### ^^^ ####
 
 #pathway to laod in data (without resample)
-#load("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment/reporting/final_reporting_nov24/seadragon_flight_height_data.RData")
+#load("C:/Users/mmil0049/OneDrive - Monash University/fieldwork/projectSD atsea deployment/reporting/final_reporting_nov24/projectSD_flight_height_data.RData")
 
 #### Summarise and compare altitude between species  ####
 
@@ -422,7 +413,7 @@ dat_comp<-dat_flying%>%group_by(sp)%>%summarise(n_bird=n_distinct(ID), n_bursts=
 #write.csv(dat_comp, 'reporting/final_reporting_nov24/height_table_mar2025_updatedapproach.csv')
 #ignore min values as dives!
 
-### Export data for RPS
+### Export data for client
 
 dat_NOTflying<-dat_NOTflying%>%group_by(burstID)%>%slice(1)
 dat_NOTflying$sit_fly<-"sitting"
@@ -443,7 +434,7 @@ dat_out<-dat_out%>%rename(Tag_ID=ID, Species=sp, Burst_ID=burstID, UTC_timestamp
                           Speed_kmh=Speed..km.h., Temperature_degC=Device.Temperature, Pressure_pa=Pressure,
                           Sit_or_fly=sit_fly, Flight_height_m=flight_height_m)
 
-#write.csv(dat_out, 'reporting/final_reporting_nov24/biologger_data_RPS.csv', quote=F, row.names=F)
+#write.csv(dat_out, 'reporting/final_reporting_nov24/biologger_data_client.csv', quote=F, row.names=F)
 
 ## Making plots
 dat_flying$sp<-as.factor(dat_flying$sp)
@@ -515,31 +506,31 @@ ggplot(data=dat%>%filter((Speed..km.h./3.6)>4))+geom_density(aes(x=alt_DS, colou
 results_sf<-st_as_sf(results, coords=c("Longitude", "Latitude"), crs=4326)
 flying_sf<-st_as_sf(dat_flying, coords=c("Longitude", "Latitude"), crs=4326)
 
-seadragon<-st_read('C:/Users/mmil0049/OneDrive - Monash University/fieldwork/Seadragon atsea deployment/ApplicationExtent_Proposed_24022023.shp')
+projectSD<-st_read('C:/Users/mmil0049/OneDrive - Monash University/fieldwork/projectSD atsea deployment/ApplicationExtent_Proposed_24022023.shp')
 declared<-st_read('C:/Users/mmil0049/OneDrive - Monash University/sourced_data/OffshoreRenewable_Energy_Infrastructure_Regions_-7255248435075607356/Offshore_Renewable_Energy_Infrastructure_Regions.shp')
 declared<-filter(declared, Region=='Gippsland' & Status=='Superceded') #use original declared area
 shelf200<-st_read('C:/Users/mmil0049/OneDrive - Monash University/sourced_data/200_contour_SE_aus_single.shp')
 
-seadragon<-st_transform(seadragon, crs=4326)
+projectSD<-st_transform(projectSD, crs=4326)
 declared<-st_transform(declared, crs=4326)
 
 sf_use_s2(TRUE)
-results_sf$in_seadragon<-lengths(st_intersects(results_sf, seadragon, sparse = T))
+results_sf$projectSD<-lengths(st_intersects(results_sf, projectSD, sparse = T))
 results_sf$in_declared<-lengths(st_intersects(results_sf, declared, sparse = T))
 sf_use_s2(FALSE);results_sf$in_shelf<-lengths(st_intersects(results_sf, shelf200, sparse = T))
 
 tmap_mode("view")
 tm_shape(shelf200)+tm_polygons(fill=NULL)+
   tm_shape(declared)+tm_polygons(fill=NULL, col='red')+
-  tm_shape(seadragon)+tm_polygons(fill=NULL, col='blue')+
+  tm_shape(projectSD)+tm_polygons(fill=NULL, col='blue')+
   tm_shape(results_sf)+tm_dots(fill=as.character("in_declared"))
 
 sf_use_s2(TRUE)
-flying_sf$in_seadragon<-lengths(st_intersects(flying_sf, seadragon, sparse = T))
+flying_sf$in_projectSD<-lengths(st_intersects(flying_sf, projectSD, sparse = T))
 flying_sf$in_declared<-lengths(st_intersects(flying_sf, declared, sparse = T))
 sf_use_s2(FALSE);flying_sf$in_shelf<-lengths(st_intersects(flying_sf, shelf200, sparse = T))
 
-flying_ovl<-cbind(flying_sf%>%st_drop_geometry()%>%filter(in_seadragon>0)%>%group_by(sp)%>%
+flying_ovl<-cbind(flying_sf%>%st_drop_geometry()%>%filter(in_projectSD>0)%>%group_by(sp)%>%
   summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)),
   flying_sf%>%st_drop_geometry()%>%filter(in_declared>0)%>%group_by(sp)%>%
     summarise(mn_alt=mean(alt_DS), sd_alt=sd(alt_DS), max=max(alt_DS))%>%tidyr::complete(sp, fill=list(0)),
@@ -557,7 +548,7 @@ results_sf$sp<-base::factor(results_sf$sp, levels=c('WCAL', 'SHAL', 'BUAL', 'BBA
 
 residence_ovl<-results_sf%>%st_drop_geometry()%>%group_by(sp)%>%summarise(tot_hrs=n())
 
-residence_ovl<-cbind(results_sf%>%st_drop_geometry()%>%filter(in_seadragon>0)%>%group_by(sp)%>%
+residence_ovl<-cbind(results_sf%>%st_drop_geometry()%>%filter(in_projectSD>0)%>%group_by(sp)%>%
                        summarise(n_bird=n_distinct(ID), n_hrs=n())%>%tidyr::complete(sp, fill=list(0))%>%
                        mutate(p_tot=n_hrs/residence_ovl$tot_hrs), 
                      results_sf%>%st_drop_geometry()%>%filter(in_declared>0)%>%group_by(sp)%>%

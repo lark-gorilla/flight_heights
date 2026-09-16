@@ -13,7 +13,7 @@ resample <- function(data=data, timeStep = 0.25) # note limit set to 12 for inte
     O <- data[i,]
     B <- data[i+1,]
     
-    print(paste("at point ", i, " ", TimeRemaining, " Time Remains"))
+    #print(paste("at point ", i, " ", TimeRemaining, " Time Remains"))
     
     if(TimeRemaining == 0)
     {
@@ -93,7 +93,7 @@ resample <- function(data=data, timeStep = 0.25) # note limit set to 12 for inte
       out <- rbind(out, Temp)
     }
     
-    plot(Latitude~Longitude, data=out, asp=1)
+    #plot(Latitude~Longitude, data=out, asp=1)
     
     TimeRemaining <- TrackTime - B$TrackTime
   }
