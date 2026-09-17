@@ -114,7 +114,8 @@ dat%>%filter(class %in% c("T", "L", "A"))%>%group_by(daynight)%>%summarise(n())
 
 #data export for Monash Bridges
 d1<-dat%>%dplyr::select(birdID=ID, burstID, datetime_UTC=DateTime_UTC, latitude=Latitude, longitude=Longitude,
-                        speed_ms=speed, hdop, vdop, nSats, fixTime,vBatt, GPSaltitude=alt, temp_degC=temp, pres_pa, burst_class=class)
+                        speed_ms=speed, hdop, vdop, nSats, fixTime,vBatt, GPSaltitude=alt, temp_degC=temp, pres_pa, burst_class=class, 
+                        ERA5_mn_sea_lvl_pres=mean_sea_level_pressure, ERA5_wave_hgt=wave_height, ERA5_wave_prd=wave_period)
 d1$speed_ms<-d1$speed_ms/1.94384 # convert from knots to ms-1
 d1[d1$burst_class=='A',]$burst_class<-'takeoff_landing'
 d1[d1$burst_class=='C',]$burst_class<-'at_colony'
