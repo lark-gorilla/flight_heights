@@ -100,7 +100,7 @@ wilcox.test(x= dat_flying%>%group_by(burstID, ds_seg_gps)%>%summarise(seg_dur=n(
 
 #### ^^ ####
 
-#### Se p0 for lower, upper and central scenarios ####
+#### Set p0 for lower, upper and central scenarios ####
 
 # use absolute maximum for p0 (upper scenario)
 dat_flying<-dat_flying%>%group_by(burstID)%>%mutate(p0_mx=max(pres_pa)) 
