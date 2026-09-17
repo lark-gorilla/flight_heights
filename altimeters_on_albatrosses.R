@@ -18,7 +18,6 @@ library(e1071)
 library(zoo)
 library(pracma)
 library(mgcv)
-library(statpsych)
 
 setwd("C:/myloc")
 
@@ -190,10 +189,6 @@ dat_comp%>%group_by(method)%>%summarise(mn_alt=mean(Altitude), sd_alt=sd(Altitud
 #3 Altimeters (upper scenario)     5.61   3.24   4.97     0  26.1  3.28  7.32 1.09  
 #4 GPS                             5.10   9.72   4      -63  89    0     9    0.0607
 
-# skewness stats
-test.skew(dat_comp%>%filter(method=='GPS')%>%pull(Altitude))
-
-
 # make plot
 cols <- c('#dc267f','#648fff','#fe6100','#ffb000')
 
@@ -345,7 +340,7 @@ p1<-ggplot(sit_expl, aes(x=DateTime_AEDT)) +
   theme_bw()+scale_x_datetime(date_breaks = "1 min", date_labels= '%H:%M:%S', name='Burst time (AEDT)') 
 
 
-p_out<-p1/(wp1+wp2)/(wp3+wp4)
+p1/(wp1+wp2)/(wp3+wp4)
 #### ^^^ ####
 
 #### Make  Fig 1 ####
@@ -425,7 +420,7 @@ for(i in unique(dat$burstID))
   
   out1<-data.frame(burstID=i, birdID=unique(dtemp$birdID), burst_class=unique(dtemp$burst_class), 
                    min_t=min(abs((sit_burst$DateTime_AEDT- 
-                                    median(dtemp$DateTime_AEDT)))))
+                                    median(dtemp$DateTime_AEDT))), na.rm=T))
   sumr<-rbind(sumr, out1)
 }
 
